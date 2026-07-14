@@ -1,0 +1,1590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Empire State Building — Interactive 3D Recreation</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#0b0e14;font-family:Georgia,'Times New Roman',serif}
+  #app{position:fixed;inset:0}
+  canvas{display:block}
+  #ui{position:fixed;inset:0;pointer-events:none;color:#eee;z-index:5}
+  #intro{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:radial-gradient(ellipse at 50% 35%, rgba(20,24,34,.82), rgba(5,7,12,.94));pointer-events:auto;
+    transition:opacity .8s;text-align:center;padding:0 20px}
+  #intro.hidden{opacity:0;pointer-events:none}
+  #intro h1{font-size:clamp(26px,4.5vw,52px);letter-spacing:.28em;margin:.2em 0;font-weight:400;color:#e8d9b0}
+  #intro h2{font-size:clamp(12px,1.5vw,16px);letter-spacing:.5em;font-weight:400;color:#9fb2c8;margin:0 0 8px}
+  #deco-line{width:min(520px,80vw);height:22px;margin:14px 0}
+  #intro p{max-width:640px;color:#b9c2cf;font-size:14px;line-height:1.7}
+  .btnrow{display:flex;gap:18px;margin-top:26px;flex-wrap:wrap;justify-content:center}
+  .btn{pointer-events:auto;cursor:pointer;border:1px solid #c9a44a;color:#e8d9b0;background:rgba(30,26,16,.55);
+    padding:13px 34px;font-size:15px;letter-spacing:.22em;font-family:inherit;transition:all .25s}
+  .btn:hover{background:#c9a44a;color:#1a1409}
+  #keys{margin-top:26px;font-size:12px;color:#8b94a3;letter-spacing:.12em}
+  #credit{position:absolute;bottom:12px;width:100%;text-align:center;font-size:11px;color:#5f6875;letter-spacing:.08em}
+  #credit a{color:#7f8b9d}
+  #crosshair{position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px;border-radius:50%;
+    background:rgba(255,255,255,.75);box-shadow:0 0 4px rgba(0,0,0,.7);display:none}
+  #prompt{position:absolute;left:50%;top:58%;transform:translateX(-50%);font-size:15px;letter-spacing:.15em;
+    color:#f3e6c2;text-shadow:0 1px 3px #000;display:none;background:rgba(10,10,14,.45);padding:7px 16px;border:1px solid rgba(201,164,74,.5)}
+  #caption{position:absolute;left:50%;bottom:7%;transform:translateX(-50%);font-size:17px;letter-spacing:.3em;
+    color:#efe3c0;text-shadow:0 2px 6px #000;opacity:0;transition:opacity 1.2s;text-align:center;white-space:nowrap}
+  #caption small{display:block;font-size:11px;letter-spacing:.35em;color:#a8b4c4;margin-top:6px}
+  #compass{position:absolute;top:14px;left:50%;transform:translateX(-50%);display:none}
+  #fade{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity 1.1s}
+  .lm{position:absolute;transform:translate(-50%,-100%);font-size:11px;letter-spacing:.2em;color:#ffe9bb;
+    text-shadow:0 1px 4px #000,0 0 12px rgba(0,0,0,.7);white-space:nowrap;pointer-events:none}
+  .lm::after{content:"";display:block;width:1px;height:14px;background:linear-gradient(#ffe9bb,transparent);margin:3px auto 0}
+  #tourbar{position:absolute;top:16px;right:18px;display:none;pointer-events:auto}
+  #tourbar .btn{padding:7px 16px;font-size:11px}
+  #loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#0b0e14;
+    color:#c9a44a;letter-spacing:.4em;font-size:14px;z-index:9;transition:opacity .6s}
+  #loading.hidden{opacity:0;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="ui">
+  <div id="crosshair"></div>
+  <div id="prompt"></div>
+  <div id="caption"></div>
+  <canvas id="compass" width="640" height="30"></canvas>
+  <div id="labels"></div>
+  <div id="tourbar"><button class="btn" id="stopTour">■&nbsp;&nbsp;END TOUR</button></div>
+  <div id="fade"></div>
+  <div id="intro">
+    <h2>NEW YORK CITY&nbsp;&nbsp;·&nbsp;&nbsp;350 FIFTH AVENUE</h2>
+    <h1>EMPIRE STATE BUILDING</h1>
+    <svg id="deco-line" viewBox="0 0 520 22"><g stroke="#c9a44a" fill="none">
+      <path d="M0 11h200M320 11h200"/><path d="M225 11l35-9 35 9-35 9z"/><circle cx="260" cy="11" r="3" fill="#c9a44a"/></g></svg>
+    <p>An interactive 3D recreation built from real OpenStreetMap data — over 30,000 actual Manhattan buildings
+       at their true positions and heights. Walk Fifth Avenue, step into the Art&nbsp;Deco lobby, ride the express
+       elevator to the 86th-floor observatory, and take in Manhattan from the Hudson River to Central Park.</p>
+    <div class="btnrow">
+      <button class="btn" id="playBtn">ENTER&nbsp;&nbsp;⌖</button>
+      <button class="btn" id="tourBtn">CINEMATIC&nbsp;TOUR&nbsp;&nbsp;▶</button>
+    </div>
+    <div id="keys">W A S D — walk&nbsp;&nbsp;·&nbsp;&nbsp;MOUSE — look&nbsp;&nbsp;·&nbsp;&nbsp;SHIFT — run&nbsp;&nbsp;·&nbsp;&nbsp;E — use elevator&nbsp;&nbsp;·&nbsp;&nbsp;ESC — menu</div>
+    <div id="credit">Building &amp; map data © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors (ODbL) · three.js · footprints, heights, streets, parks and shorelines are real.</div>
+  </div>
+  <div id="loading">RAISING&nbsp;STEEL&nbsp;…</div>
+</div>
+<script src="data/city_data.js"></script>
+<script type="importmap">
+{ "imports": { "three": "./lib/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+/* ================================================================== *
+ *  0. DATA DECODE — city_data.js coords are integer (deci)meters,     *
+ *  delta-encoded, origin at ESB footprint centroid.                   *
+ *  +x = east, +z = south, y = up.                                     *
+ * ================================================================== */
+const D = window.CITY_DATA;
+function decRing(r, q){ const p=[]; let x=r[0], z=r[1]; p.push([x*q,z*q]);
+  for(let i=2;i<r.length;i+=2){ x+=r[i]; z+=r[i+1]; p.push([x*q,z*q]); } return p; }
+const M_LAT=111132.0, M_LON=111320.0*Math.cos(D.origin[0]*Math.PI/180);
+const ll=(lat,lon)=>[(lon-D.origin[1])*M_LON, -(lat-D.origin[0])*M_LAT];
+
+/* Manhattan street-grid angle, derived from the real ESB footprint edge */
+const esbRing = decRing(D.esb, 0.1);
+let gridAngle=0, bestLen=0;
+for(let i=0;i<esbRing.length;i++){
+  const a=esbRing[i], b=esbRing[(i+1)%esbRing.length];
+  const dx=b[0]-a[0], dz=b[1]-a[1], L=Math.hypot(dx,dz);
+  if(L>bestLen){ bestLen=L; gridAngle=Math.atan2(dz,dx); }
+}
+if(gridAngle>Math.PI/2) gridAngle-=Math.PI; else if(gridAngle<-Math.PI/2) gridAngle+=Math.PI;
+/* gridAngle ≈ +0.507 rad: streets run ESE-WNW, avenues 29° east of north */
+
+/* ================================================================== *
+ *  1. RENDERER / SCENE / SKY / SUN                                    *
+ * ================================================================== */
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.75));
+renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.06;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0xd9c4a8, 0.000135);
+
+const camera = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.1, 30000);
+camera.rotation.order = 'YXZ';
+
+const SUN_DIR = new THREE.Vector3(-0.78, 0.30, 0.30).normalize();  // late sun over the Hudson (WSW)
+const sun = new THREE.DirectionalLight(0xffe3b8, 3.1);
+sun.position.copy(SUN_DIR).multiplyScalar(1400);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=-200; sun.shadow.camera.right=200;
+sun.shadow.camera.top=440;  sun.shadow.camera.bottom=-80;
+sun.shadow.camera.near=400; sun.shadow.camera.far=3000;
+sun.shadow.bias=-0.0004;
+scene.add(sun, sun.target);
+scene.add(new THREE.HemisphereLight(0xbdd0e8, 0x847a68, 1.05));
+/* cool fill from the east so sun-averted faces aren't black */
+const fill = new THREE.DirectionalLight(0x9db8d8, 0.55);
+fill.position.set(900, 500, -400);
+scene.add(fill, fill.target);
+scene.add(new THREE.AmbientLight(0xffe0c0, 0.16));
+
+const sky = new THREE.Mesh(new THREE.SphereGeometry(19000,32,20),
+  new THREE.ShaderMaterial({side:THREE.BackSide, depthWrite:false, fog:false,
+    uniforms:{ sunDir:{value:SUN_DIR} },
+    vertexShader:`varying vec3 vD; void main(){ vD=normalize(position);
+      gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+    fragmentShader:`varying vec3 vD; uniform vec3 sunDir;
+      void main(){
+        float h=clamp(vD.y,-.05,1.);
+        vec3 zen=vec3(.23,.38,.62), mid=vec3(.62,.66,.76), hor=vec3(.98,.78,.55);
+        vec3 c=mix(mix(hor,mid,smoothstep(0.,.18,h)),zen,smoothstep(.12,.65,h));
+        float s=max(dot(vD,sunDir),0.);
+        c+=vec3(1.,.72,.42)*pow(s,7.)*.30;
+        c+=vec3(1.,.9,.7)*pow(s,900.)*2.0;
+        c+=vec3(1.,.55,.3)*pow(max(1.-abs(vD.y*6.),0.),2.)*pow(s,2.)*.16;
+        gl_FragColor=vec4(c,1.);}`
+  }));
+scene.add(sky);
+
+/* ================================================================== *
+ *  2. PROCEDURAL TEXTURES (canvas) & SHARED MATERIALS                 *
+ * ================================================================== */
+function tex(w,h,draw,{srgb=true,repeat,aniso=8}={}){
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  draw(c.getContext('2d'),w,h);
+  const t=new THREE.CanvasTexture(c);
+  if(srgb) t.colorSpace=THREE.SRGBColorSpace;
+  t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  if(repeat) t.repeat.set(repeat[0],repeat[1]);
+  t.anisotropy=aniso;
+  return t;
+}
+let _seed=987654321;
+const R=()=>(_seed=(_seed*16807)%2147483647)/2147483647;
+
+/* --- ESB limestone facade: 4 window bays × 4 floors per tile --- */
+function facadeDraw(lit){ return (g,w,h)=>{
+  g.fillStyle='#b5a88f'; g.fillRect(0,0,w,h);
+  for(let i=0;i<900;i++){ g.fillStyle=`rgba(${120+R()*60|0},${110+R()*55|0},${92+R()*48|0},.16)`;
+    g.fillRect(R()*w,R()*h,2.5,2.5); }
+  const bays=4, fls=4, bw=w/bays, fh=h/fls;
+  for(let b=0;b<bays;b++) for(let f=0;f<fls;f++){
+    const x=b*bw, y=f*fh;
+    g.fillStyle='rgba(0,0,0,.10)'; g.fillRect(x,y,2,fh); g.fillRect(x+bw-2,y,2,fh);
+    const wx=x+bw*.20, ww=bw*.60, wy=y+fh*.16, wh=fh*.58;
+    g.fillStyle = R()<lit ? `rgb(${215+R()*35|0},${170+R()*40|0},${95+R()*40|0})` : '#20262e';
+    g.fillRect(wx,wy,ww,wh);
+    g.fillStyle='rgba(255,255,255,.14)'; g.fillRect(wx,wy,ww,2);
+    g.fillStyle='#8d8d90'; g.fillRect(wx+ww/2-1.5,wy,3,wh);
+    g.strokeStyle='#6c6355'; g.lineWidth=2; g.strokeRect(wx,wy,ww,wh);
+    g.fillStyle='#7d7f82'; g.fillRect(wx,y+fh*.80,ww,fh*.14);
+    g.fillStyle='rgba(255,255,255,.18)'; g.fillRect(wx,y+fh*.80,ww,2);
+    for(let s=0;s<4;s++){ g.fillStyle='rgba(40,40,44,.5)';
+      g.fillRect(wx+4+s*ww/4,y+fh*.82,2,fh*.10); }
+  }
+};}
+const BAY_W=3.15, FLOOR_H=3.72;
+const stoneMat = new THREE.MeshStandardMaterial({color:0x9a9081, roughness:.9});
+/* box whose x/z faces carry facade texture with real-scale repeats */
+function facadeBox(wx,hy,dz,lit=0.14){
+  const mkMat=(len)=>{ const m=new THREE.MeshStandardMaterial({map:tex(512,512,facadeDraw(lit)),roughness:.8,metalness:.07});
+    m.map.repeat.set(Math.max(.5,len/BAY_W/4), Math.max(.5,hy/FLOOR_H/4)); return m; };
+  const mx=mkMat(dz), mz=mkMat(wx);
+  return new THREE.Mesh(new THREE.BoxGeometry(wx,hy,dz),[mx,mx,stoneMat,stoneMat,mz,mz]);
+}
+
+/* --- deep rose marble (Rose Famosa) --- */
+function marbleDraw(base,vein){ return (g,w,h)=>{
+  g.fillStyle=base; g.fillRect(0,0,w,h);
+  for(let i=0;i<40;i++){ const x=R()*w,y=R()*h,r=30+R()*120;
+    const gr=g.createRadialGradient(x,y,0,x,y,r);
+    gr.addColorStop(0,`rgba(${30+R()*50|0},${10+R()*22|0},${12+R()*20|0},.35)`);
+    gr.addColorStop(1,'rgba(0,0,0,0)'); g.fillStyle=gr; g.beginPath(); g.arc(x,y,r,0,7); g.fill(); }
+  for(let v=0;v<16;v++){ let x=R()*w,y=R()*h; g.strokeStyle=vein; g.lineWidth=.6+R()*1.6;
+    g.beginPath(); g.moveTo(x,y);
+    for(let s=0;s<26;s++){ x+=(R()-.48)*34; y+=(R()-.5)*20; g.lineTo(x,y); } g.stroke(); }
+  g.fillStyle='rgba(255,240,225,.045)';
+  for(let i=0;i<400;i++) g.fillRect(R()*w,R()*h,1.5,1.5);
+};}
+const marbleMat  = new THREE.MeshStandardMaterial({map:tex(512,512,marbleDraw('#5c2723','rgba(232,205,180,.34)')), roughness:.34, metalness:.06});
+const marbleDkMat= new THREE.MeshStandardMaterial({map:tex(512,512,marbleDraw('#4b2226','rgba(210,170,150,.32)')),roughness:.36, metalness:.06});
+const marbleGyMat= new THREE.MeshStandardMaterial({map:tex(512,512,marbleDraw('#6e6a63','rgba(235,230,220,.30)')),roughness:.4});
+
+/* --- terrazzo lobby floor --- */
+const terrazzoMat=new THREE.MeshStandardMaterial({roughness:.28,metalness:.05,
+  map:tex(512,512,(g,w,h)=>{
+    g.fillStyle='#c9bda6'; g.fillRect(0,0,w,h);
+    const cols=['#a89a80','#8d7f68','#e2d8c2','#7c6a55','#b7a88d','#54483a'];
+    for(let i=0;i<5200;i++){ g.fillStyle=cols[R()*cols.length|0];
+      g.globalAlpha=.5+R()*.5; const s=1+R()*3.4; g.fillRect(R()*w,R()*h,s,s); }
+    g.globalAlpha=1;
+  },{repeat:[3,3]})});
+
+/* --- metals & glass --- */
+const brassMat  = new THREE.MeshStandardMaterial({color:0xb08d3e, metalness:.92, roughness:.32});
+const bronzeMat = new THREE.MeshStandardMaterial({color:0x6d4a26, metalness:.85, roughness:.42});
+const alumMat   = new THREE.MeshStandardMaterial({color:0xc8ccd2, metalness:.95, roughness:.28});
+const steelDk   = new THREE.MeshStandardMaterial({color:0x3c4046, metalness:.85, roughness:.4});
+const blackGlass= new THREE.MeshStandardMaterial({color:0x11151c, metalness:.4, roughness:.08});
+const glassMat  = new THREE.MeshPhysicalMaterial({color:0x9fb6c4, metalness:0, roughness:.06,
+                    transparent:true, opacity:.42, side:THREE.DoubleSide});
+const shaftMat  = new THREE.MeshStandardMaterial({color:0x1a1c20, roughness:.95});
+
+/* --- the aluminum relief mural: ESB over sunrays (lobby west wall) --- */
+const muralTex = tex(1024,1024,(g,w,h)=>{
+  marbleDraw('#4a1e1c','rgba(220,190,165,.28)')(g,w,h);
+  const cx=w/2;
+  g.save(); g.translate(cx,h*.30);
+  for(let i=0;i<24;i++){ const a=-Math.PI/2 + (i-11.5)*.135;
+    const gr=g.createLinearGradient(0,0,Math.cos(a)*w*.62,Math.sin(a)*w*.62);
+    gr.addColorStop(0,'rgba(225,228,235,.85)'); gr.addColorStop(1,'rgba(225,228,235,0)');
+    g.strokeStyle=gr; g.lineWidth=i%2?3:7; g.beginPath(); g.moveTo(0,0);
+    g.lineTo(Math.cos(a)*w*.62,Math.sin(a)*w*.62); g.stroke(); }
+  g.restore();
+  g.strokeStyle='rgba(230,232,238,.5)';
+  for(let r=40;r<=130;r+=30){ g.lineWidth=3; g.beginPath(); g.arc(cx,h*.30,r,0,7); g.stroke(); }
+  const grB=g.createLinearGradient(cx-90,0,cx+90,0);
+  grB.addColorStop(0,'#8f949c'); grB.addColorStop(.5,'#eef1f6'); grB.addColorStop(1,'#7c828c');
+  g.fillStyle=grB; g.strokeStyle='#3d3f45'; g.lineWidth=3;
+  const S=[[185,h*.86,h*.78],[160,h*.78,h*.72],[140,h*.72,h*.68],[62,h*.68,h*.34],[46,h*.34,h*.30],[30,h*.30,h*.24],[12,h*.24,h*.14]];
+  for(const [hw,y0,y1] of S){ g.fillRect(cx-hw,y1,hw*2,y0-y1); g.strokeRect(cx-hw,y1,hw*2,y0-y1); }
+  g.fillRect(cx-3,h*.10,6,h*.04);
+  g.strokeStyle='rgba(60,62,70,.55)'; g.lineWidth=1.5;
+  for(const [hw,y0,y1] of S){ for(let x=cx-hw+10;x<cx+hw-8;x+=13){
+    g.beginPath(); g.moveTo(x,y1+6); g.lineTo(x,y0-6); g.stroke(); } }
+  g.strokeStyle='#c9a44a'; g.lineWidth=5; g.strokeRect(28,28,w-56,h-56);
+  g.lineWidth=2; g.strokeRect(44,44,w-88,h-88);
+  g.fillStyle='#e8d9b0'; g.font='700 54px Georgia'; g.textAlign='center';
+  g.fillText('E M P I R E   S T A T E', cx, h*.945);
+});
+const muralMat=new THREE.MeshStandardMaterial({map:muralTex,roughness:.42,metalness:.35});
+
+/* --- Art-Deco elevator doors: brass sunburst fans --- */
+function elevDoorDraw(g,w,h){
+  const gr=g.createLinearGradient(0,0,0,h);
+  gr.addColorStop(0,'#7c5a2a'); gr.addColorStop(.5,'#96703a'); gr.addColorStop(1,'#6b4c24');
+  g.fillStyle=gr; g.fillRect(0,0,w,h);
+  g.strokeStyle='#d9b25e';
+  for(let k=0;k<2;k++){ // two half-door panels, fan from bottom-center seam
+    const ox=k?w*.75:w*.25;
+    for(let i=0;i<9;i++){ const a=-Math.PI/2+(i-4)*.16;
+      g.lineWidth=i%2?1.6:3; g.beginPath(); g.moveTo(ox,h*.94);
+      g.lineTo(ox+Math.cos(a)*h*.8, h*.94+Math.sin(a)*h*.8); g.stroke(); }
+    for(let r=h*.12;r<h*.8;r+=h*.17){ g.lineWidth=1.4; g.beginPath();
+      g.arc(ox,h*.94,r,Math.PI*1.15,Math.PI*1.85); g.stroke(); }
+  }
+  g.fillStyle='#2e2417'; g.fillRect(w/2-2,0,4,h);          // center seam
+  g.strokeStyle='#e7c877'; g.lineWidth=4; g.strokeRect(6,6,w-12,h-12);
+  g.strokeStyle='#3a2c14'; g.lineWidth=2; g.strokeRect(12,12,w-24,h-24);
+}
+function elevDoorMat(){ return new THREE.MeshStandardMaterial({map:tex(256,512,elevDoorDraw),metalness:.75,roughness:.35}); }
+
+/* --- ceiling mural strip: gold celestial gears & stars --- */
+const ceilingTex = tex(1024,512,(g,w,h)=>{
+  g.fillStyle='#33261a'; g.fillRect(0,0,w,h);
+  for(let i=0;i<160;i++){ g.fillStyle=`rgba(201,164,74,${.06+R()*.12})`;
+    g.fillRect(R()*w,R()*h,2,2); }
+  for(let m=0;m<4;m++){ const cx=w*(m+.5)/4, cy=h/2;
+    g.strokeStyle='#c9a44a';
+    for(const r of [24,40,58,80]){ g.lineWidth=r===58?4:2;
+      g.beginPath(); g.arc(cx,cy,r,0,7); g.stroke(); }
+    for(let i=0;i<16;i++){ const a=i/16*Math.PI*2;
+      g.lineWidth=2; g.beginPath(); g.moveTo(cx+Math.cos(a)*40,cy+Math.sin(a)*40);
+      g.lineTo(cx+Math.cos(a)*(i%2?96:112),cy+Math.sin(a)*(i%2?96:112)); g.stroke(); }
+    g.fillStyle='#e3c268'; g.beginPath(); g.arc(cx,cy,12,0,7); g.fill();
+    for(let i=0;i<8;i++){ const a=i/8*Math.PI*2+.4;
+      g.beginPath(); g.arc(cx+Math.cos(a)*58,cy+Math.sin(a)*58,5,0,7); g.fill(); }
+  }
+},{repeat:[3,1]});
+const ceilingMat=new THREE.MeshStandardMaterial({map:ceilingTex,roughness:.6,metalness:.3,
+  emissive:0x8a6a30, emissiveMap:ceilingTex, emissiveIntensity:.28});
+
+/* --- misc surface textures --- */
+const sidewalkMat=new THREE.MeshStandardMaterial({roughness:.95,
+  map:tex(256,256,(g,w,h)=>{
+    g.fillStyle='#98948b'; g.fillRect(0,0,w,h);
+    for(let i=0;i<800;i++){ g.fillStyle=`rgba(${60+R()*40|0},${60+R()*40|0},${58+R()*40|0},.25)`;
+      g.fillRect(R()*w,R()*h,1.6,1.6); }
+    g.strokeStyle='rgba(50,50,50,.5)'; g.lineWidth=3;
+    g.strokeRect(0,0,w/2,h/2); g.strokeRect(w/2,h/2,w/2,h/2);
+  },{repeat:[16,16]})});
+const asphaltMat=new THREE.MeshStandardMaterial({roughness:.98,
+  map:tex(256,256,(g,w,h)=>{
+    g.fillStyle='#3b3c3e'; g.fillRect(0,0,w,h);
+    for(let i=0;i<1400;i++){ g.fillStyle=`rgba(${40+R()*50|0},${40+R()*50|0},${42+R()*50|0},.35)`;
+      g.fillRect(R()*w,R()*h,1.4,1.4); }
+  },{repeat:[10,40]})});
+const deckFloorMat=new THREE.MeshStandardMaterial({roughness:.85,
+  map:tex(256,256,(g,w,h)=>{
+    g.fillStyle='#8a4f3d'; g.fillRect(0,0,w,h);
+    for(let i=0;i<600;i++){ g.fillStyle=`rgba(${100+R()*60|0},${50+R()*30|0},${36+R()*24|0},.3)`;
+      g.fillRect(R()*w,R()*h,2,2); }
+    g.strokeStyle='rgba(30,20,16,.55)'; g.lineWidth=2;
+    for(let x=0;x<=w;x+=w/4) { g.beginPath(); g.moveTo(x,0); g.lineTo(x,h); g.stroke(); }
+    for(let y=0;y<=h;y+=h/4) { g.beginPath(); g.moveTo(0,y); g.lineTo(w,y); g.stroke(); }
+  },{repeat:[12,9]})});
+const cabWallMat=new THREE.MeshStandardMaterial({roughness:.4,metalness:.15,
+  map:tex(256,256,(g,w,h)=>{
+    for(let p=0;p<4;p++){ const x=p*w/4;
+      const gr=g.createLinearGradient(x,0,x+w/4,0);
+      const t1=p%2?'#4a2f1c':'#5d3d24', t2=p%2?'#6a4527':'#3d2716';
+      gr.addColorStop(0,t1); gr.addColorStop(.5,t2); gr.addColorStop(1,t1);
+      g.fillStyle=gr; g.fillRect(x,0,w/4,h);
+      g.strokeStyle='rgba(220,180,110,.4)'; g.lineWidth=2; g.strokeRect(x+3,3,w/4-6,h-6);
+      for(let i=0;i<60;i++){ g.strokeStyle=`rgba(30,18,10,${.08+R()*.12})`; g.lineWidth=1;
+        g.beginPath(); const yy=R()*h; g.moveTo(x,yy); g.lineTo(x+w/4,yy+(R()-.5)*8); g.stroke(); }
+    }
+  },{repeat:[2,1]})});
+
+/* text plate helper (brass letters on stone/dark ground) */
+function textPlate(txt,{w=1024,h=128,fg='#e8d9b0',bg='rgba(20,16,10,0)',font='700 72px Georgia',ls=14}={}){
+  const t=tex(w,h,(g)=>{
+    g.clearRect(0,0,w,h);
+    if(bg!=='transparent'){ g.fillStyle=bg; g.fillRect(0,0,w,h); }
+    g.font=font; g.textAlign='center'; g.textBaseline='middle';
+    g.fillStyle=fg;
+    const chars=txt.split('');
+    const total=chars.reduce((a,c)=>a+g.measureText(c).width+ls,0)-ls;
+    let x=w/2-total/2;
+    for(const c of chars){ const cw=g.measureText(c).width;
+      g.fillText(c,x+cw/2,h/2); x+=cw+ls; }
+  });
+  t.wrapS=t.wrapT=THREE.ClampToEdgeWrapping;
+  return t;
+}
+
+/* ================================================================== *
+ *  3. CITY FROM REAL OSM DATA                                         *
+ * ================================================================== */
+function ringArea(pts){ let a=0;
+  for(let i=0;i<pts.length;i++){ const p=pts[i], q=pts[(i+1)%pts.length];
+    a+=p[0]*q[1]-q[0]*p[1]; } return a/2; }
+
+/* Extrude a list of {pts,h,base} into one vertex-colored geometry. */
+function buildPrisms(items, colorFn){
+  const pos=[], nrm=[], col=[];
+  const push=(p,n,c)=>{ pos.push(p[0],p[1],p[2]); nrm.push(n[0],n[1],n[2]); col.push(c[0],c[1],c[2]); };
+  const v2=[];
+  for(const it of items){
+    let pts=it.pts;
+    if(ringArea(pts)<0) pts=[...pts].reverse();
+    const {h}=it, base=it.base||0, cols=colorFn(it);
+    const [wallC, roofC, aoK]=cols;
+    // walls
+    for(let i=0;i<pts.length;i++){
+      const a=pts[i], b=pts[(i+1)%pts.length];
+      const dx=b[0]-a[0], dz=b[1]-a[1], L=Math.hypot(dx,dz);
+      if(L<0.01) continue;
+      const n=[dz/L,0,-dx/L];
+      const shade=.72+.28*Math.abs(n[0]*.8+n[2]*.2);   // fake directional variation
+      const cLo=[wallC[0]*aoK*shade, wallC[1]*aoK*shade, wallC[2]*aoK*shade];
+      const cHi=[wallC[0]*shade, wallC[1]*shade, wallC[2]*shade];
+      const A=[a[0],base,a[1]], B=[b[0],base,b[1]], C=[b[0],base+h,b[1]], E=[a[0],base+h,a[1]];
+      push(A,n,cLo); push(B,n,cLo); push(C,n,cHi);
+      push(A,n,cLo); push(C,n,cHi); push(E,n,cHi);
+    }
+    // roof
+    v2.length=0;
+    for(const p of pts) v2.push(new THREE.Vector2(p[0],p[1]));
+    let tris;
+    try{ tris=THREE.ShapeUtils.triangulateShape(v2,[]); }catch(e){ tris=[]; }
+    for(const t of tris){
+      const a=pts[t[0]], b=pts[t[1]], c=pts[t[2]];
+      push([a[0],base+h,a[1]],[0,1,0],roofC);
+      push([c[0],base+h,c[1]],[0,1,0],roofC);
+      push([b[0],base+h,b[1]],[0,1,0],roofC);
+    }
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('normal',   new THREE.Float32BufferAttribute(nrm,3));
+  g.setAttribute('color',    new THREE.Float32BufferAttribute(col,3));
+  return g;
+}
+
+const brickPalette=[[.48,.34,.28],[.55,.45,.38],[.63,.56,.46],[.42,.30,.25],[.58,.52,.44],[.5,.42,.4]];
+function cityColor(it){
+  const h=it.h, hash=Math.abs((it.pts[0][0]*7919+it.pts[0][1]*104729)|0);
+  let wall;
+  if(h>150){ const t=(hash%100)/100;
+    wall=[.42+.1*t,.48+.09*t,.56+.1*t]; }               // glass towers
+  else if(h>60){ const t=(hash%100)/100;
+    wall=[.55+.12*t,.51+.11*t,.45+.1*t]; }              // masonry mid-rise
+  else wall=brickPalette[hash%brickPalette.length];
+  const roof=h>150?[.30,.33,.38]:[(hash%3)?.32:.22,(hash%3)?.30:.21,(hash%3)?.28:.20];
+  return [wall, roof, .58];
+}
+
+const city = new THREE.Group();
+scene.add(city);
+{
+  const items = D.buildings.map(b=>({h:b[0]/10, pts:decRing(b[1],0.1)}));
+  const mesh=new THREE.Mesh(buildPrisms(items,cityColor),
+    new THREE.MeshStandardMaterial({vertexColors:true, roughness:.86, metalness:.05}));
+  city.add(mesh);
+  const farItems = D.far.map(b=>({h:b[0]/10, pts:decRing(b[1],0.5)}));
+  const farMesh=new THREE.Mesh(buildPrisms(farItems,cityColor),
+    new THREE.MeshStandardMaterial({vertexColors:true, roughness:.86, metalness:.05}));
+  city.add(farMesh);
+
+  // land masses (extruded slightly above the water plane)
+  const landItems=D.land.map(r=>({h:2.6, base:-2.6, pts:decRing(r,0.5)}));
+  city.add(new THREE.Mesh(buildPrisms(landItems,()=>[[.48,.45,.42],[.50,.475,.44],.85]),
+    new THREE.MeshStandardMaterial({vertexColors:true, roughness:.95})));
+
+  // parks / green space
+  const parkItems=D.parks.map(r=>({h:.14, base:0, pts:decRing(r,0.5)}));
+  city.add(new THREE.Mesh(buildPrisms(parkItems,()=>[[.23,.36,.2],[.27,.42,.22],1]),
+    new THREE.MeshStandardMaterial({vertexColors:true, roughness:.95})));
+
+  // inland water (Central Park reservoir & lakes)
+  const wItems=D.water.map(r=>({h:.2, base:0, pts:decRing(r,0.5)}));
+  city.add(new THREE.Mesh(buildPrisms(wItems,()=>[[.16,.28,.36],[.18,.32,.42],1]),
+    new THREE.MeshStandardMaterial({vertexColors:true, roughness:.3, metalness:.2})));
+
+  // street grid ribbons
+  const rp=[], rn=[], rc=[];
+  for(const [wdt,ring] of D.roads){
+    const pts=decRing(ring,0.5), hw=wdt/2;
+    for(let i=0;i<pts.length-1;i++){
+      const a=pts[i], b=pts[i+1];
+      const dx=b[0]-a[0], dz=b[1]-a[1], L=Math.hypot(dx,dz);
+      if(L<0.5) continue;
+      const nx=-dz/L*hw, nz=dx/L*hw, y=0.07;
+      const q=[[a[0]+nx,y,a[1]+nz],[b[0]+nx,y,b[1]+nz],[b[0]-nx,y,b[1]-nz],[a[0]-nx,y,a[1]-nz]];
+      for(const idx of [0,1,2,0,2,3]){ rp.push(...q[idx]); rn.push(0,1,0); rc.push(.255,.26,.27); }
+    }
+  }
+  const rg=new THREE.BufferGeometry();
+  rg.setAttribute('position', new THREE.Float32BufferAttribute(rp,3));
+  rg.setAttribute('normal',   new THREE.Float32BufferAttribute(rn,3));
+  rg.setAttribute('color',    new THREE.Float32BufferAttribute(rc,3));
+  city.add(new THREE.Mesh(rg, new THREE.MeshStandardMaterial({vertexColors:true, roughness:.97})));
+
+  // open water (Hudson, East River, harbor) — bounded to the baked coastline area
+  const water=new THREE.Mesh(new THREE.PlaneGeometry(17000,22400),
+    new THREE.MeshStandardMaterial({color:0x2c4d63, roughness:.42, metalness:.06}));
+  water.rotation.x=-Math.PI/2; water.position.set(850,-1.4,-700);
+  city.add(water);
+  // distant terrain beyond the data area (NJ / outer boroughs continue)
+  const outer=new THREE.Mesh(new THREE.PlaneGeometry(42000,42000),
+    new THREE.MeshStandardMaterial({color:0x6f6a5f, roughness:.98}));
+  outer.rotation.x=-Math.PI/2; outer.position.y=-2.1;
+  city.add(outer);
+}
+
+/* ================================================================== *
+ *  4. GRID FRAME — everything hand-modeled lives in Manhattan-grid    *
+ *  aligned local coordinates. local +x → toward 5th Ave (ESE),        *
+ *  local -z → uptown (NNE).                                           *
+ * ================================================================== */
+const grid = new THREE.Group();
+grid.rotation.y = -gridAngle;
+scene.add(grid);
+const colliders=[];           // {x0,x1,y0,y1,z0,z1} in grid coords
+const floors=[];              // {x0,x1,z0,z1,top} in grid coords
+function addCollider(x0,x1,y0,y1,z0,z1){ colliders.push({x0,x1,y0,y1,z0,z1}); }
+function addFloor(x0,x1,z0,z1,top){ floors.push({x0,x1,z0,z1,top}); }
+/* visual wall + collider in one call */
+function wallBox(x0,x1,y0,y1,z0,z1,mat,{collide=true,shadow=false}={}){
+  const m=new THREE.Mesh(new THREE.BoxGeometry(x1-x0,y1-y0,z1-z0),mat);
+  m.position.set((x0+x1)/2,(y0+y1)/2,(z0+z1)/2);
+  if(shadow){ m.castShadow=true; m.receiveShadow=true; }
+  grid.add(m);
+  if(collide) addCollider(x0,x1,y0,y1,z0,z1);
+  return m;
+}
+
+/* ================================================================== *
+ *  5. EMPIRE STATE BUILDING — exterior massing (real setback profile) *
+ * ================================================================== */
+const esb=new THREE.Group();
+grid.add(esb);
+{
+  const blocks=[ // [w,d,y0,y1,cx,cz]
+    [112 ,50, 20,  84, 0, 0],     // floors 6–20
+    [103 ,46, 84,  99, 0, 0],     // 21–24
+    [95  ,42, 99, 117, 0, 0],     // 25–29
+    [64  ,36,117, 270, 0, 0],     // main shaft 30–71
+    [18  ,30,117, 246,-41, 0],    // west end bay
+    [18  ,30,117, 246, 41, 0],    // east end bay
+    [34  , 5,117, 258, 0,-20.5],  // north face projection
+    [34  , 5,117, 258, 0, 20.5],  // south face projection
+    [48  ,28,270, 288, 0, 0],     // 72–76
+    [40  ,24,288, 303, 0, 0],     // 77–80
+    [38  ,26,303, 318.6, 0, 0],   // 81–85 (deck block)
+  ];
+  for(const [w,d,y0,y1,cx,cz] of blocks){
+    const b=facadeBox(w,y1-y0,d);
+    b.position.set(cx,(y0+y1)/2,cz);
+    b.castShadow=true; b.receiveShadow=true;
+    esb.add(b);
+  }
+  // ground-level base (floors 1–5): hollow — perimeter walls with entrance portal
+  const bx0=-64.65,bx1=64.65,bz0=-29.7,bz1=29.7,BT=1.2,BH=20;
+  const wallN=facadeBox(bx1-bx0,BH,BT,0.3); wallN.position.set(0,BH/2,bz0+BT/2);
+  const wallS=facadeBox(bx1-bx0,BH,BT,0.3); wallS.position.set(0,BH/2,bz1-BT/2);
+  const wallW=facadeBox(BT,BH,bz1-bz0,0.3); wallW.position.set(bx0+BT/2,BH/2,0);
+  for(const m of [wallN,wallS,wallW]){ m.castShadow=true; m.receiveShadow=true; esb.add(m); }
+  addCollider(bx0,bx1,0,BH,bz0-.1,bz0+BT);
+  addCollider(bx0,bx1,0,BH,bz1-BT,bz1+.1);
+  addCollider(bx0,bx0+BT,0,BH,bz0,bz1);
+  // east wall (5th Ave) with entrance portal: opening z -4.5..4.5, y 0..8
+  const ex0=bx1-BT, ex1=bx1;
+  const segN=facadeBox(BT,BH,(-4.5)-bz0,0.3); segN.position.set((ex0+ex1)/2,BH/2,(bz0+(-4.5))/2);
+  const segS=facadeBox(BT,BH,bz1-4.5,0.3);   segS.position.set((ex0+ex1)/2,BH/2,(4.5+bz1)/2);
+  const segT=facadeBox(BT,BH-8,9,0.3);       segT.position.set((ex0+ex1)/2,8+(BH-8)/2,0);
+  for(const m of [segN,segS,segT]){ m.castShadow=true; m.receiveShadow=true; esb.add(m); }
+  addCollider(ex0,ex1,0,BH,bz0,-4.5);
+  addCollider(ex0,ex1,0,BH,4.5,bz1);
+  addCollider(ex0,ex1,8,BH,-4.5,4.5);
+  // roof slab of the base
+  wallBox(bx0,bx1,BH-0.4,BH,bz0,bz1,stoneMat,{collide:false});
+
+  /* --- entrance portal trim: stepped granite surround + brass --- */
+  const por=(w,h,d,mat,x,y,z)=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+    m.position.set(x,y,z); m.castShadow=true; esb.add(m); return m; };
+  por(1.0,10.5,12.6, marbleGyMat, bx1+0.15, 5.25, 0);
+  por(0.8,9.6,11.2, marbleDkMat, bx1+0.55, 4.8, 0);
+  // portal side columns + lintel in brass
+  por(0.5,8.2,0.7, brassMat, bx1+0.6, 4.1, -4.7);
+  por(0.5,8.2,0.7, brassMat, bx1+0.6, 4.1,  4.7);
+  por(0.5,0.8,10.0, brassMat, bx1+0.6, 8.35, 0);
+  addCollider(bx1+0.3, bx1+0.9, 0, 8.2, -5.05, -4.35);
+  addCollider(bx1+0.3, bx1+0.9, 0, 8.2,  4.35,  5.05);
+  // "EMPIRE STATE" letters above the entrance
+  const plate=new THREE.Mesh(new THREE.PlaneGeometry(11,1.4),
+    new THREE.MeshStandardMaterial({map:textPlate('EMPIRE STATE',{font:'700 84px Georgia'}),
+      transparent:true, metalness:.8, roughness:.3, color:0xd9c07a}));
+  plate.rotation.y=Math.PI/2; plate.position.set(bx1+1.1,9.4,0); esb.add(plate);
+  // vertical fluting above the portal to the base roofline
+  for(let i=-3;i<=3;i++){
+    por(0.35,10,0.7, marbleGyMat, bx1+0.35, 14.5, i*1.5);
+  }
+  // door mullions & glass in the opening (three revolving-style bays)
+  for(const zz of [-4.5,-1.5,1.5,4.5]) por(0.35,8,0.35, bronzeMat, bx1-0.6, 4, zz);
+  for(const zz of [-3,0,3]){
+    const gl=new THREE.Mesh(new THREE.PlaneGeometry(2.6,4.6),glassMat);
+    gl.rotation.y=Math.PI/2; gl.position.set(bx1-0.6,6.2,zz); esb.add(gl); // transom glass above head height
+  }
+  por(0.4,0.5,9.4, bronzeMat, bx1-0.6, 8.1, 0);
+
+  /* --- mooring mast / observatory tower & antenna --- */
+  const drum=(r,y0,y1,mat,seg=16)=>{ const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,y1-y0,seg),mat);
+    m.position.y=(y0+y1)/2; m.castShadow=true; esb.add(m); return m; };
+  const mastMat=new THREE.MeshStandardMaterial({color:0xb9b3a4, metalness:.35, roughness:.5});
+  drum(6,318.6,341,mastMat);
+  drum(4.6,341,356,mastMat);
+  drum(3.2,356,373,mastMat);
+  const obs102=drum(2.7,373,379, new THREE.MeshStandardMaterial({color:0x8fa3b5, metalness:.6, roughness:.2,
+    emissive:0x223244, emissiveIntensity:.4}));
+  drum(2.3,379,382,mastMat);
+  const cap=new THREE.Mesh(new THREE.SphereGeometry(2.3,16,10,0,Math.PI*2,0,Math.PI/2),mastMat);
+  cap.position.y=382; esb.add(cap);
+  const antMat=new THREE.MeshStandardMaterial({color:0x8d8d92, metalness:.8, roughness:.4});
+  const ant1=new THREE.Mesh(new THREE.CylinderGeometry(.35,.6,31,8),antMat); ant1.position.y=399.5; esb.add(ant1);
+  const ant2=new THREE.Mesh(new THREE.CylinderGeometry(.1,.2,26,6),antMat); ant2.position.y=428; esb.add(ant2);
+  const beacon=new THREE.Mesh(new THREE.SphereGeometry(.55,10,8),
+    new THREE.MeshStandardMaterial({color:0x330000, emissive:0xff2020, emissiveIntensity:2}));
+  beacon.position.y=442; esb.add(beacon);
+  window.__beacon=beacon;
+}
+
+/* ================================================================== *
+ *  6. FIFTH AVENUE STREET SCENE                                       *
+ * ================================================================== */
+{
+  const st=new THREE.Group(); grid.add(st);
+  const add=(m)=>{ st.add(m); return m; };
+  // 5th Ave roadway (grid-local: runs along z on the east side of the block)
+  const road=add(new THREE.Mesh(new THREE.PlaneGeometry(26,320),asphaltMat));
+  road.rotation.x=-Math.PI/2; road.position.set(83,0.10,0); road.receiveShadow=true;
+  // sidewalks
+  const swMk=(x0,x1,z0,z1)=>{ const m=add(new THREE.Mesh(new THREE.PlaneGeometry(x1-x0,z1-z0),sidewalkMat));
+    m.rotation.x=-Math.PI/2; m.position.set((x0+x1)/2,0.13,(z0+z1)/2); m.receiveShadow=true;
+    addFloor(x0,x1,z0,z1,0.13); return m; };
+  swMk(64.65,72,-45,45);        // ESB frontage
+  swMk(96,104,-160,160);        // east side of 5th
+  swMk(-70,64.65,-36,-29.7);    // 34th St sidewalk (N)
+  swMk(-70,64.65,29.7,36);      // 33rd St sidewalk (S)
+  addFloor(-200,200,-200,200,0.02); // generic street level
+  // crosswalk stripes across 5th Ave
+  for(const zz of [-38,38]) for(let i=0;i<9;i++){
+    const s=add(new THREE.Mesh(new THREE.PlaneGeometry(2.6,1.1),
+      new THREE.MeshStandardMaterial({color:0xcfcfc6,roughness:.9})));
+    s.rotation.x=-Math.PI/2; s.position.set(71.5+i*2.9,0.115,zz);
+  }
+  // Art-Deco lampposts along the curb
+  const lampMat=new THREE.MeshStandardMaterial({color:0x1e2b22, metalness:.6, roughness:.5});
+  for(const [lx,lz] of [[71,-32],[71,-11],[71,11],[71,32],[97.5,-22],[97.5,22]]){
+    const g=new THREE.Group(); g.position.set(lx,0.13,lz);
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(.09,.14,7.6,8),lampMat); pole.position.y=3.8; pole.castShadow=true;
+    const arm=new THREE.Mesh(new THREE.BoxGeometry(1.6,.08,.08),lampMat); arm.position.set(lx<80?-0.8:0.8,7.2,0);
+    const head=new THREE.Mesh(new THREE.SphereGeometry(.28,10,8),
+      new THREE.MeshStandardMaterial({color:0xfff2cc, emissive:0xffdf9e, emissiveIntensity:.35}));
+    head.position.set(lx<80?-1.6:1.6,7.05,0);
+    g.add(pole,arm,head); st.add(g);
+    addCollider(lx-.2,lx+.2,0,7,lz-.2,lz+.2);
+  }
+  // flags over the entrance
+  const flagTex=[
+    tex(128,80,(g,w,h)=>{ g.fillStyle='#b22234'; g.fillRect(0,0,w,h);
+      for(let i=1;i<13;i+=2){ g.fillStyle='#fff'; g.fillRect(0,i*h/13,w,h/13); }
+      g.fillStyle='#3c3b6e'; g.fillRect(0,0,w*.4,h*7/13);
+      g.fillStyle='#fff'; for(let r=0;r<5;r++)for(let c=0;c<6;c++) g.fillRect(4+c*w*.062,3+r*h*.1,2.5,2.5); }),
+    tex(128,80,(g,w,h)=>{ g.fillStyle='#1c4587'; g.fillRect(0,0,w,h);
+      g.fillStyle='#e8d9b0'; g.font='700 34px Georgia'; g.textAlign='center'; g.fillText('NY',w/2,h/2+12); }),
+    tex(128,80,(g,w,h)=>{ g.fillStyle='#5c2723'; g.fillRect(0,0,w,h);
+      g.fillStyle='#c9a44a'; g.font='700 22px Georgia'; g.textAlign='center'; g.fillText('ESB',w/2,h/2+8); }),
+  ];
+  flagTex.forEach((ft,i)=>{
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(.05,.05,5,6),alumMat);
+    pole.rotation.z=-Math.PI/3.2; pole.position.set(66.8,11.6,(i-1)*4.5);
+    const geo=new THREE.PlaneGeometry(2.6,1.6,8,1);
+    const pp=geo.attributes.position;
+    for(let v=0;v<pp.count;v++){ pp.setZ(v, Math.sin(pp.getX(v)*3)*0.12); } // gentle ripple
+    const flag=new THREE.Mesh(geo, new THREE.MeshStandardMaterial({map:ft,side:THREE.DoubleSide,roughness:.9}));
+    flag.position.set(68.6,13,(i-1)*4.5);
+    grid.add(pole,flag);
+  });
+  // parked cars (one classic yellow cab)
+  const carCols=[0xd8b122,0x2a2e34,0x5c6670];
+  carCols.forEach((cc,i)=>{
+    const car=new THREE.Group(); car.position.set(74.4,0.12,-26+i*17.5);
+    const body=new THREE.Mesh(new THREE.BoxGeometry(2,.62,4.4),
+      new THREE.MeshStandardMaterial({color:cc, metalness:.6, roughness:.35}));
+    body.position.y=.55; body.castShadow=true;
+    const cab=new THREE.Mesh(new THREE.BoxGeometry(1.86,.5,2.2),blackGlass); cab.position.set(0,1.05,-.2);
+    car.add(body,cab);
+    for(const [wx,wz] of [[-.95,1.4],[.95,1.4],[-.95,-1.4],[.95,-1.4]]){
+      const wh=new THREE.Mesh(new THREE.CylinderGeometry(.34,.34,.24,12),
+        new THREE.MeshStandardMaterial({color:0x151515,roughness:.9}));
+      wh.rotation.z=Math.PI/2; wh.position.set(wx,.34,wz); car.add(wh);
+    }
+    st.add(car);
+    addCollider(73.3,75.5,0,1.6,-28.2+i*17.5,-23.8+i*17.5);
+  });
+  // invisible bounds around the explorable block
+  addCollider(-72,-70,0,30,-60,60);
+  addCollider(-72,110,0,30,-62,-60);
+  addCollider(-72,110,0,30,60,62);
+  addCollider(108,110,0,30,-60,60);
+}
+/* ================================================================== *
+ *  7. THE LOBBY — three-story Art Deco hall                           *
+ *  hall x 8..56, z ±6.5 · vestibule x 56..64.65, z ±5                 *
+ *  elevator corridors x 14..22, z ±6.5..±24 · floor y 0.35            *
+ * ================================================================== */
+const lobby=new THREE.Group(); grid.add(lobby);
+const FLOOR_Y=0.35;
+const lobbyLights=[];
+{
+  const add=m=>{ lobby.add(m); return m; };
+  const box=(x0,x1,y0,y1,z0,z1,mat,collide=true)=>{
+    const m=new THREE.Mesh(new THREE.BoxGeometry(x1-x0,y1-y0,z1-z0),mat);
+    m.position.set((x0+x1)/2,(y0+y1)/2,(z0+z1)/2); add(m);
+    if(collide) addCollider(x0,x1,y0,y1,z0,z1);
+    return m;
+  };
+  /* floors */
+  const fl=(x0,x1,z0,z1)=>{ const m=add(new THREE.Mesh(new THREE.PlaneGeometry(x1-x0,z1-z0),terrazzoMat));
+    m.rotation.x=-Math.PI/2; m.position.set((x0+x1)/2,FLOOR_Y,(z0+z1)/2);
+    addFloor(x0,x1,z0,z1,FLOOR_Y); };
+  fl(7.3,56,-6.85,6.85);        // hall
+  fl(56,64.65,-5.2,5.2);        // vestibule
+  fl(13.65,22.35,-24.2,-6.5);   // north corridor
+  fl(13.65,22.35,6.5,24.2);     // south corridor
+  // brass floor inlay strips down the hall
+  for(const zz of [-4.6,4.6]) box(9,55,FLOOR_Y,FLOOR_Y+0.012,zz-0.09,zz+0.09,brassMat,false);
+  // central floor medallion (compass star)
+  const med=add(new THREE.Mesh(new THREE.CircleGeometry(2.6,48),
+    new THREE.MeshStandardMaterial({metalness:.5,roughness:.3, map:tex(512,512,(g,w,h)=>{
+      g.fillStyle='#3a2b20'; g.fillRect(0,0,w,h);
+      g.translate(w/2,h/2);
+      g.strokeStyle='#c9a44a'; g.fillStyle='#c9a44a';
+      for(const r of [70,110,170,230]){ g.lineWidth=r===170?10:4; g.beginPath(); g.arc(0,0,r,0,7); g.stroke(); }
+      for(let i=0;i<8;i++){ g.rotate(Math.PI/4);
+        g.beginPath(); g.moveTo(0,-225); g.lineTo(14,-140); g.lineTo(-14,-140); g.closePath();
+        g.fillStyle=i%2?'#c9a44a':'#e6e8ec'; g.fill(); }
+    })})));
+  med.rotation.x=-Math.PI/2; med.position.set(32,FLOOR_Y+0.005,0);
+
+  /* hall side walls with pilasters (openings at x 14..22 to both corridors) */
+  const WT=0.35, H=10;
+  for(const s of [-1,1]){
+    const z=s*6.5, zo=s*6.85;
+    box(8,14,FLOOR_Y,H,Math.min(z,zo),Math.max(z,zo),marbleMat);
+    box(22,56,FLOOR_Y,H,Math.min(z,zo),Math.max(z,zo),marbleMat);
+    box(14,22,4.6,H,Math.min(z,zo),Math.max(z,zo),marbleMat);   // header over corridor opening
+    // pilasters
+    for(let x=10;x<=54;x+=5.5){
+      if(x>13&&x<23) continue;
+      box(x-0.35,x+0.35,FLOOR_Y,8.6,z-s*0.45,z,marbleDkMat,false).castShadow=false;
+      box(x-0.42,x+0.42,8.3,8.62,z-s*0.5,z,brassMat,false);
+      box(x-0.42,x+0.42,FLOOR_Y,1.5,z-s*0.5,z,marbleGyMat,false);
+    }
+    // wainscot band + brass trim along the wall
+    box(8,56,FLOOR_Y,1.5,z-s*0.06,z,marbleDkMat,false);
+    box(8,56,1.5,1.56,z-s*0.07,z,brassMat,false);
+    // corridor opening surround
+    box(13.85,14.15,FLOOR_Y,5.0,z-s*0.5,z,brassMat,false);
+    box(21.85,22.15,FLOOR_Y,5.0,z-s*0.5,z,brassMat,false);
+    box(13.85,22.15,4.45,4.75,z-s*0.5,z,brassMat,false);
+  }
+
+  /* west wall: the aluminum relief mural */
+  box(7.3,8,FLOOR_Y,H,-6.85,6.85,marbleMat);
+  const mur=add(new THREE.Mesh(new THREE.PlaneGeometry(9.6,8.2),muralMat));
+  mur.rotation.y=Math.PI/2; mur.position.set(8.06,FLOOR_Y+4.45,0);
+  // mural spotlights (fake glow strips)
+  box(8.05,8.35,8.7,8.85,-4.5,4.5,new THREE.MeshStandardMaterial({color:0x222,emissive:0xffd9a0,emissiveIntensity:1.6}),false);
+  /* info desk in front of the mural */
+  box(11.6,13.2,FLOOR_Y,1.12,-3.4,3.4,marbleDkMat);
+  box(11.5,13.3,1.12,1.2,-3.5,3.5,brassMat,false);
+  const deskSign=add(new THREE.Mesh(new THREE.PlaneGeometry(4.4,0.5),
+    new THREE.MeshStandardMaterial({map:textPlate('INFORMATION',{font:'700 64px Georgia',ls:10}),transparent:true,color:0xd9c07a,metalness:.7,roughness:.35})));
+  deskSign.rotation.y=Math.PI/2; deskSign.position.set(13.32,0.85,0);
+
+  /* hall end wall toward vestibule (x=56) with wide opening z ±5 */
+  box(56,56.35,FLOOR_Y,H,-6.85,-5,marbleMat);
+  box(56,56.35,FLOOR_Y,H,5,6.85,marbleMat);
+  box(56,56.35,6.2,H,-5,5,marbleMat);
+
+  /* vestibule walls */
+  box(56,64.65,FLOOR_Y,6.2,-5.35,-5,marbleMat);
+  box(56,64.65,FLOOR_Y,6.2,5,5.35,marbleMat);
+  box(56,64.65,6.2,6.5,-5.35,5.35,marbleGyMat,false);   // vestibule ceiling
+  addFloor(64.65,66.5,-4.5,4.5,0.13);                    // threshold outside
+
+  /* ceilings: stepped nave with gilded mural strip */
+  for(const s of [-1,1]) box(8,56,6.2,6.5,s>0?4.2:-6.85,s>0?6.85:-4.2,marbleGyMat,false); // side soffits
+  const nave=add(new THREE.Mesh(new THREE.PlaneGeometry(48,8.4),ceilingMat));
+  nave.rotation.x=Math.PI/2; nave.position.set(32,10,0);
+  addCollider(8,56,10,10.4,-6.85,6.85);
+  // cove light strips at the soffit edges
+  for(const zz of [-4.2,4.2]) box(8.5,55.5,6.14,6.2,zz-0.12,zz+0.12,
+    new THREE.MeshStandardMaterial({color:0x333,emissive:0xffdaa2,emissiveIntensity:1.5}),false);
+
+  /* chandeliers: stacked aluminum discs */
+  for(const cx of [20,32,44]){
+    const ch=new THREE.Group(); ch.position.set(cx,0,0);
+    const rod=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,1.6,6),steelDk); rod.position.y=9.2;
+    ch.add(rod);
+    [[1.0,8.35],[.75,8.05],[.5,7.8]].forEach(([r,y])=>{
+      const d=new THREE.Mesh(new THREE.CylinderGeometry(r,r*.9,.14,20),alumMat); d.position.y=y; ch.add(d);
+      const gl=new THREE.Mesh(new THREE.CylinderGeometry(r*.86,r*.78,.1,20),
+        new THREE.MeshStandardMaterial({color:0xfff1d0,emissive:0xffd9a0,emissiveIntensity:1.3}));
+      gl.position.y=y-0.1; ch.add(gl);
+    });
+    lobby.add(ch);
+  }
+  const l1=new THREE.PointLight(0xffd9a8,60,44,1.8); l1.position.set(22,7.2,0); lobby.add(l1);
+  const l2=new THREE.PointLight(0xffd9a8,60,44,1.8); l2.position.set(46,7.2,0); lobby.add(l2);
+  const l4=new THREE.PointLight(0xffe0b0,34,26,1.8); l4.position.set(11.5,6.5,0); lobby.add(l4); // mural wash
+  const l5=new THREE.PointLight(0xffe0b0,46,26,1.8); l5.position.set(60,5,0); lobby.add(l5);   // vestibule
+  const l8=new THREE.PointLight(0xffd9a0,30,20,1.8); l8.position.set(65.6,5.6,0); lobby.add(l8); // entrance glow
+  lobbyLights.push(l1,l2,l4,l5,l8);
+
+  /* ---------- elevator corridors ---------- */
+  const CH=4.8;
+  for(const s of [-1,1]){ // s=-1 north (functional), s=+1 south (decorative)
+    const z0=s<0?-24:6.5, z1=s<0?-6.5:24;
+    // east wall x=22 (decorative doors), west wall x=14, end wall
+    box(22,22.35,FLOOR_Y,CH,z0,z1,marbleMat);
+    if(s<0){ // north corridor west wall with the observatory elevator door gap (z -8.45..-7.15)
+      box(13.65,14,FLOOR_Y,CH,-24,-8.45,marbleMat);
+      box(13.65,14,FLOOR_Y,CH,-7.15,-6.5,marbleMat);
+      box(13.65,14,2.85,CH,-8.45,-7.15,marbleMat);
+    } else {
+      box(13.65,14,FLOOR_Y,CH,6.5,24,marbleMat);
+    }
+    box(13.65,22.35,FLOOR_Y,CH,s<0?-24.35:24,s<0?-24:24.35,marbleMat); // end wall
+    // ceiling
+    box(13.65,22.35,CH,CH+0.3,z0,z1,marbleGyMat,false);
+    // cove
+    box(14.2,21.8,CH-0.06,CH,z0+0.3,z0+0.5,new THREE.MeshStandardMaterial({color:0x333,emissive:0xffdaa2,emissiveIntensity:1.2}),false);
+    // decorative elevator doors on the east wall
+    for(let i=0;i<3;i++){
+      const dz=(s<0?-11:11)+s*i*4.3;
+      const door=new THREE.Mesh(new THREE.PlaneGeometry(1.5,2.6),elevDoorMat());
+      door.rotation.y=-Math.PI/2; door.position.set(21.98,FLOOR_Y+1.3,dz); add(door);
+      const fr=box(21.9,22.02,FLOOR_Y,3.1,dz-0.95,dz+0.95,marbleDkMat,false);
+      fr.position.x=21.96;
+      // dial above
+      const dial=new THREE.Mesh(new THREE.CircleGeometry(.42,24,0,Math.PI),makeDialMat(1));
+      dial.rotation.y=-Math.PI/2; dial.position.set(21.95,FLOOR_Y+3.0,dz); add(dial);
+    }
+  }
+  /* velvet rope stanchions guiding to the observatory elevator */
+  for(let i=0;i<4;i++){
+    const px=17+i*3.2, pz=-3.2;
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(.05,.16,1.05,10),brassMat);
+    post.position.set(px,FLOOR_Y+0.52,pz); add(post);
+    addCollider(px-.15,px+.15,FLOOR_Y,1.4,pz-.15,pz+.15);
+    if(i>0){
+      const prev=new THREE.Vector3(px-3.2,FLOOR_Y+0.95,pz), cur=new THREE.Vector3(px,FLOOR_Y+0.95,pz);
+      const mid=prev.clone().lerp(cur,.5); mid.y-=0.22;
+      const rope=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([prev,mid,cur]),12,.035,6),
+        new THREE.MeshStandardMaterial({color:0x7a1f2b,roughness:.9}));
+      add(rope);
+    }
+  }
+  const obsSign=add(new THREE.Mesh(new THREE.PlaneGeometry(5.4,0.62),
+    new THREE.MeshStandardMaterial({map:textPlate('← OBSERVATORY · 86TH FLOOR',{font:'600 54px Georgia',ls:6}),
+      transparent:true,color:0xe8d9b0,metalness:.6,roughness:.4})));
+  obsSign.rotation.y=Math.PI; obsSign.position.set(18,FLOOR_Y+3.7,-6.42);
+  const l3=new THREE.PointLight(0xffd9a8,30,26,1.8); l3.position.set(18,3.9,-16); lobby.add(l3);
+  const l6=new THREE.PointLight(0xffd9a8,22,18,1.8); l6.position.set(17,3.9,-8); lobby.add(l6);   // by the observatory elevator
+  const l7=new THREE.PointLight(0xffd9a8,30,26,1.8); l7.position.set(18,3.9,16); lobby.add(l7);   // south corridor
+  lobbyLights.push(l3,l6,l7);
+}
+
+/* floor-dial material factory (semicircular art-deco indicator) */
+function makeDial(floorNum){
+  return (g,w,h)=>{
+    g.clearRect(0,0,w,h);
+    g.fillStyle='#241a10'; g.beginPath(); g.arc(w/2,h,h*.96,Math.PI,0); g.fill();
+    g.strokeStyle='#c9a44a'; g.lineWidth=5; g.beginPath(); g.arc(w/2,h,h*.9,Math.PI,0); g.stroke();
+    g.fillStyle='#e8d9b0'; g.font='700 26px Georgia'; g.textAlign='center';
+    const marks=[1,20,40,60,80,86];
+    for(const m of marks){
+      const a=Math.PI+(m-1)/85*Math.PI;
+      g.fillText(String(m), w/2+Math.cos(a)*h*.68, h+Math.sin(a)*h*.68+9);
+    }
+    const na=Math.PI+(floorNum-1)/85*Math.PI;
+    g.strokeStyle='#e94f37'; g.lineWidth=6;
+    g.beginPath(); g.moveTo(w/2,h); g.lineTo(w/2+Math.cos(na)*h*.55,h+Math.sin(na)*h*.55); g.stroke();
+    g.fillStyle='#c9a44a'; g.beginPath(); g.arc(w/2,h,10,0,7); g.fill();
+  };
+}
+function makeDialMat(floorNum){
+  const t=tex(256,128,makeDial(floorNum));
+  return new THREE.MeshStandardMaterial({map:t,transparent:true,metalness:.4,roughness:.5});
+}
+/* dynamic canvas texture helper */
+function dynTex(w,h){
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  const g=c.getContext('2d');
+  const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace;
+  return { t, g, w, h, redraw(fn){ fn(this.g,this.w,this.h); this.t.needsUpdate=true; } };
+}
+
+/* ================================================================== *
+ *  8. THE EXPRESS ELEVATOR                                            *
+ *  shaft x 10.9..13.7 · z -9.2..-6.4 · door opening z -8.45..-7.15    *
+ * ================================================================== */
+const ELEV={ LOBBY:FLOOR_Y, DECK:319.0, X0:10.9,X1:13.7, Z0:-9.2,Z1:-6.4,
+  DOOR_Z0:-8.45, DOOR_Z1:-7.15 };
+const elevator={ at:'lobby', state:'closed', doorT:0, cabY:ELEV.LOBBY, t0:0,
+  rideFrom:0, rideTo:0, rideT:24, pending:null, playerInside:false };
+
+/* shaft enclosure (visible only through open doors) */
+wallBox(ELEV.X0-0.2,ELEV.X0,0,322,ELEV.Z0-0.2,ELEV.Z1+0.2,shaftMat);
+wallBox(ELEV.X0,ELEV.X1,0,322,ELEV.Z0-0.2,ELEV.Z0,shaftMat);
+wallBox(ELEV.X0,ELEV.X1,0,322,ELEV.Z1,ELEV.Z1+0.2,shaftMat);
+/* shaft east wall above/below door openings */
+wallBox(ELEV.X1,14,0,322,ELEV.Z0,ELEV.DOOR_Z0,shaftMat);
+wallBox(ELEV.X1,14,0,322,ELEV.DOOR_Z1,ELEV.Z1,shaftMat);
+wallBox(ELEV.X1,14,FLOOR_Y+2.5,319,ELEV.DOOR_Z0,ELEV.DOOR_Z1,shaftMat);   // between floors
+wallBox(ELEV.X1,14,ELEV.DECK+2.5,322,ELEV.DOOR_Z0,ELEV.DOOR_Z1,shaftMat); // above deck door
+
+/* --- cab --- */
+const cab=new THREE.Group(); grid.add(cab);
+{
+  const CW0=11.15,CW1=13.45,CD0=-8.95,CD1=-6.65,CH=2.9;
+  const mk=(x0,x1,y0,y1,z0,z1,mat)=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(x1-x0,y1-y0,z1-z0),mat);
+    m.position.set((x0+x1)/2-12.3,(y0+y1)/2,(z0+z1)/2+7.8); cab.add(m); return m; };
+  mk(CW0,CW1,-0.08,0,CD0,CD1, new THREE.MeshStandardMaterial({color:0x2c2018,roughness:.5}));  // floor
+  mk(CW0,CW0+0.06,0,CH,CD0,CD1,cabWallMat);   // west wall
+  mk(CW0,CW1,0,CH,CD0,CD0+0.06,cabWallMat);   // north wall
+  mk(CW0,CW1,0,CH,CD1-0.06,CD1,cabWallMat);   // south wall
+  mk(CW1-0.06,CW1,0,CH,CD0,ELEV.DOOR_Z0,cabWallMat); // east wall beside door
+  mk(CW1-0.06,CW1,0,CH,ELEV.DOOR_Z1,CD1,cabWallMat);
+  mk(CW1-0.06,CW1,2.42,CH,ELEV.DOOR_Z0,ELEV.DOOR_Z1,cabWallMat); // header
+  mk(CW0,CW1,CH,CH+0.06,CD0,CD1,cabWallMat);  // ceiling
+  const lightPanel=mk(CW0+0.5,CW1-0.5,CH-0.03,CH,CD0+0.5,CD1-0.5,
+    new THREE.MeshStandardMaterial({color:0xfff3d8,emissive:0xffe1b0,emissiveIntensity:1.4}));
+  // brass handrails
+  for(const [x0,x1,z0,z1] of [[CW0+0.08,CW0+0.08,CD0+0.15,CD1-0.15],[CW0+0.15,CW1-0.15,CD0+0.10,CD0+0.10],[CW0+0.15,CW1-0.15,CD1-0.10,CD1-0.10]]){
+    const a=new THREE.Vector3(x0-12.3,1.02,z0+7.8), b=new THREE.Vector3(x1-12.3,1.02,z1+7.8);
+    const rail=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([a,b]),4,.03,8),brassMat);
+    cab.add(rail);
+  }
+  const cl=new THREE.PointLight(0xffe6c0,16,8,1.8); cl.position.set(0,2.3,0); cab.add(cl);
+}
+/* cab indicator (inside, above door) */
+const cabInd=dynTex(256,84);
+{
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(0.9,0.3),
+    new THREE.MeshBasicMaterial({map:cabInd.t,transparent:true}));
+  m.rotation.y=-Math.PI/2; m.position.set(13.45-12.3-0.07,2.66,0); cab.add(m);
+}
+function drawInd(g,w,h,fl,arrow){
+  g.clearRect(0,0,w,h); g.fillStyle='#181209'; g.fillRect(0,0,w,h);
+  g.strokeStyle='#c9a44a'; g.lineWidth=4; g.strokeRect(3,3,w-6,h-6);
+  g.fillStyle='#ffb43a'; g.font='700 52px Georgia'; g.textAlign='center';
+  g.fillText((arrow||'')+' '+fl, w/2, h/2+19);
+}
+cabInd.redraw((g,w,h)=>drawInd(g,w,h,'L',''));
+
+/* door panels: cab pair + landing pair at each floor */
+function doorPanelPair(x, y0){
+  const g=new THREE.Group();
+  const mat=elevDoorMat(); mat.map.repeat.set(.5,1);
+  const mkP=(cz)=>{ const p=new THREE.Mesh(new THREE.BoxGeometry(0.07,2.4,0.66),mat);
+    p.position.set(x,y0+1.2,cz); grid.add(p); return p; };
+  return { left: mkP(-8.13), right: mkP(-7.47), y0 };
+}
+const doorsLobby=doorPanelPair(13.9, FLOOR_Y);
+const doorsDeck =doorPanelPair(13.9, ELEV.DECK);
+const doorsCab  =doorPanelPair(13.52, FLOOR_Y); // moves with cab
+/* landing door frames + functional dials */
+const lobbyDial=dynTex(256,128), deckDial=dynTex(256,128);
+function landingTrim(y0, dial){
+  wallBox(13.95,14.12,y0,y0+3.1,ELEV.DOOR_Z0-0.4,ELEV.DOOR_Z0,marbleDkMat,{collide:false});
+  wallBox(13.95,14.12,y0,y0+3.1,ELEV.DOOR_Z1,ELEV.DOOR_Z1+0.4,marbleDkMat,{collide:false});
+  wallBox(13.95,14.12,y0+2.5,y0+3.1,ELEV.DOOR_Z0,ELEV.DOOR_Z1,marbleDkMat,{collide:false});
+  const d=new THREE.Mesh(new THREE.CircleGeometry(.42,24,0,Math.PI),
+    new THREE.MeshStandardMaterial({map:dial.t,transparent:true}));
+  d.rotation.y=Math.PI/2; d.position.set(14.11,y0+3.35,-7.8); grid.add(d);
+  const plaque=new THREE.Mesh(new THREE.PlaneGeometry(1.7,0.3),
+    new THREE.MeshStandardMaterial({map:textPlate('OBSERVATORY',{font:'600 60px Georgia',ls:8}),transparent:true,color:0xe8d9b0}));
+  plaque.rotation.y=Math.PI/2; plaque.position.set(14.11,y0+2.78,-7.8); grid.add(plaque);
+  // call button
+  const btn=new THREE.Mesh(new THREE.CylinderGeometry(.05,.05,.03,10),brassMat);
+  btn.rotation.z=Math.PI/2; btn.position.set(14.05,y0+1.15,-6.9); grid.add(btn);
+}
+landingTrim(FLOOR_Y, lobbyDial);
+landingTrim(ELEV.DECK, deckDial);
+lobbyDial.redraw(makeDial(1)); deckDial.redraw(makeDial(86));
+
+const yToFloor=y=>Math.max(1,Math.min(86,Math.round(1+85*(y-ELEV.LOBBY)/(ELEV.DECK-ELEV.LOBBY))));
+
+/* ================================================================== *
+ *  9. 86TH FLOOR OBSERVATORY                                          *
+ *  deck x ±19, z ±13 (top of the 81–85 block) · floor y 319           *
+ * ================================================================== */
+const deck=new THREE.Group(); grid.add(deck);
+{
+  const DY=ELEV.DECK, X=19, Z=13;
+  const add=m=>{ deck.add(m); return m; };
+  const box=(x0,x1,y0,y1,z0,z1,mat,collide=true)=>{
+    const m=new THREE.Mesh(new THREE.BoxGeometry(x1-x0,y1-y0,z1-z0),mat);
+    m.position.set((x0+x1)/2,(y0+y1)/2,(z0+z1)/2); m.castShadow=true; m.receiveShadow=true; add(m);
+    if(collide) addCollider(x0,x1,y0,y1,z0,z1);
+    return m;
+  };
+  // deck floor
+  const df=add(new THREE.Mesh(new THREE.PlaneGeometry(2*X,2*Z),deckFloorMat));
+  df.rotation.x=-Math.PI/2; df.position.set(0,DY,0); df.receiveShadow=true;
+  addFloor(-X,X,-Z,Z,DY);
+  // cast-stone parapet with metal coping
+  const PP=1.12;
+  const parapetMat=new THREE.MeshStandardMaterial({color:0xb3aa98, roughness:.92});
+  box(-X,X,DY,DY+PP,-Z,-Z+0.45,parapetMat);
+  box(-X,X,DY,DY+PP,Z-0.45,Z,parapetMat);
+  box(-X,-X+0.45,DY,DY+PP,-Z,Z,parapetMat);
+  box(X-0.45,X,DY,DY+PP,-Z,Z,parapetMat);
+  for(const [x0,x1,z0,z1] of [[-X,X,-Z,-Z+0.5],[-X,X,Z-0.5,Z],[-X,-X+0.5,-Z,Z],[X-0.5,X,-Z,Z]])
+    box(x0,x1,DY+PP,DY+PP+0.07,z0,z1,steelDk,false);
+
+  /* the iconic curved-top safety fence */
+  {
+    const pts=[]; // one bar: rises then curves inward
+    for(let i=0;i<=10;i++){ const t=i/10;
+      if(t<0.62){ pts.push(new THREE.Vector3(0, DY+PP+ t/0.62*1.05, 0)); }
+      else { const a=(t-0.62)/0.38*Math.PI/2;
+        pts.push(new THREE.Vector3(0, DY+PP+1.05+Math.sin(a)*0.42, -(1-Math.cos(a))*0.5)); }
+    }
+    const fenceMat=new THREE.MeshStandardMaterial({color:0x6a6f76, metalness:.8, roughness:.45});
+    const barGeo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),12,.015,5);
+    const sides=[
+      {len:2*X-1.0, count:Math.floor((2*X-1)/0.22), rot:0,          org:[-X+0.5+0,0, -Z+0.28], axis:'x', dirIn: 1},
+      {len:2*X-1.0, count:Math.floor((2*X-1)/0.22), rot:Math.PI,    org:[-X+0.5,0,  Z-0.28],  axis:'x', dirIn:-1},
+      {len:2*Z-1.0, count:Math.floor((2*Z-1)/0.22), rot:Math.PI/2,  org:[-X+0.28,0,-Z+0.5],   axis:'z', dirIn: 1},
+      {len:2*Z-1.0, count:Math.floor((2*Z-1)/0.22), rot:-Math.PI/2, org:[ X-0.28,0,-Z+0.5],   axis:'z', dirIn:-1},
+    ];
+    const total=sides.reduce((a,s)=>a+s.count,0);
+    const inst=new THREE.InstancedMesh(barGeo, fenceMat, total);
+    const M=new THREE.Matrix4(), Q=new THREE.Quaternion(), P=new THREE.Vector3(), S=new THREE.Vector3(1,1,1);
+    let idx=0;
+    for(const s of sides){
+      for(let i=0;i<s.count;i++){
+        const t=i/(s.count-1)*s.len;
+        if(s.axis==='x') P.set(s.org[0]+t,0,s.org[2]); else P.set(s.org[0],0,s.org[2]+t);
+        Q.setFromAxisAngle(new THREE.Vector3(0,1,0), s.rot);
+        M.compose(P,Q,S); inst.setMatrixAt(idx++,M);
+      }
+    }
+    add(inst);
+    // horizontal rails
+    const railMk=(y,inset)=>{
+      for(const [x0,x1,z0,z1] of [[-X+0.4,X-0.4,-Z+inset,-Z+inset+0.036],[-X+0.4,X-0.4,Z-inset-0.036,Z-inset],
+                                   [-X+inset,-X+inset+0.036,-Z+0.4,Z-0.4],[X-inset-0.036,X-inset,-Z+0.4,Z-0.4]])
+        box(x0,x1,y,y+0.036,z0,z1,steelDk,false);
+    };
+    railMk(DY+PP+0.35,0.27); railMk(DY+PP+0.72,0.27); railMk(DY+PP+1.06,0.27);
+    // invisible safety collider (nobody falls off on my watch)
+    addCollider(-X,X,DY,DY+2.6,-Z-0.1,-Z+0.5);
+    addCollider(-X,X,DY,DY+2.6,Z-0.5,Z+0.1);
+    addCollider(-X,-X+0.5,DY,DY+2.6,-Z,Z);
+    addCollider(X-0.5,X,DY,DY+2.6,-Z,Z);
+  }
+
+  /* pavilion (enclosed 86th floor) x -8..16.5, z -11..6.5 */
+  const PX0=-8,PX1=16.5,PZ0=-11,PZ1=6.5,PH=DY+4.4,WT=0.35;
+  const pvMat=marbleGyMat;
+  // south wall with two door openings (x -1..0.4 and x 7..8.4) and window bands
+  const winBand=(x0,x1,z0,z1,rotY)=>{
+    const gl=new THREE.Mesh(new THREE.PlaneGeometry(Math.max(x1-x0,z1-z0),1.6),glassMat);
+    gl.position.set((x0+x1)/2,DY+2.6,(z0+z1)/2); gl.rotation.y=rotY; add(gl);
+  };
+  // south wall segments
+  box(PX0,-1,DY,DY+1.8,PZ1-WT,PZ1,pvMat); box(PX0,-1,DY+3.4,PH,PZ1-WT,PZ1,pvMat);
+  winBand(PX0,-1,PZ1-WT/2,PZ1-WT/2,0);
+  addCollider(PX0,-1,DY+1.8,DY+3.4,PZ1-WT,PZ1);
+  box(0.4,7,DY,DY+1.8,PZ1-WT,PZ1,pvMat); box(0.4,7,DY+3.4,PH,PZ1-WT,PZ1,pvMat);
+  winBand(0.4,7,PZ1-WT/2,PZ1-WT/2,0);
+  addCollider(0.4,7,DY+1.8,DY+3.4,PZ1-WT,PZ1);
+  box(8.4,PX1,DY,DY+1.8,PZ1-WT,PZ1,pvMat); box(8.4,PX1,DY+3.4,PH,PZ1-WT,PZ1,pvMat);
+  winBand(8.4,PX1,PZ1-WT/2,PZ1-WT/2,0);
+  addCollider(8.4,PX1,DY+1.8,DY+3.4,PZ1-WT,PZ1);
+  box(-1,0.4,DY+3.4,PH,PZ1-WT,PZ1,pvMat);  // door headers
+  box(7,8.4,DY+3.4,PH,PZ1-WT,PZ1,pvMat);
+  // north wall (solid low + glass band)
+  box(PX0,PX1,DY,DY+1.8,PZ0,PZ0+WT,pvMat); box(PX0,PX1,DY+3.4,PH,PZ0,PZ0+WT,pvMat);
+  winBand(PX0,PX1,PZ0+WT/2,PZ0+WT/2,0);
+  addCollider(PX0,PX1,DY+1.8,DY+3.4,PZ0,PZ0+WT);
+  // west wall with door opening z -4..-2.6
+  box(PX0,PX0+WT,DY,PH,PZ0,-4,pvMat);
+  box(PX0,PX0+WT,DY,PH,-2.6,PZ1,pvMat);
+  box(PX0,PX0+WT,DY+3.4,PH,-4,-2.6,pvMat);
+  // east wall with door opening z -4..-2.6
+  box(PX1-WT,PX1,DY,PH,PZ0,-4,pvMat);
+  box(PX1-WT,PX1,DY,PH,-2.6,PZ1,pvMat);
+  box(PX1-WT,PX1,DY+3.4,PH,-4,-2.6,pvMat);
+  // roof
+  box(PX0,PX1,PH,PH+0.35,PZ0,PZ1,stoneMat,false);
+  addCollider(PX0,PX1,PH,PH+0.4,PZ0,PZ1);
+  // interior ceiling glow
+  const pvCeil=add(new THREE.Mesh(new THREE.PlaneGeometry(PX1-PX0-0.7,PZ1-PZ0-0.7),ceilingMat));
+  pvCeil.rotation.x=Math.PI/2; pvCeil.position.set((PX0+PX1)/2,PH-0.05,(PZ0+PZ1)/2);
+  const pl=new THREE.PointLight(0xffe0b0,75,32,1.7); pl.position.set(-2,DY+3.6,-2.5); deck.add(pl);
+  const pl2=new THREE.PointLight(0xffe0b0,75,32,1.7); pl2.position.set(10,DY+3.6,-2.5); deck.add(pl2);
+  // mast core passes through the pavilion (collider for the drum)
+  addCollider(-6.1,6.1,DY,PH,-6.1,6.1);
+  // signs over the doors
+  const sign=(txt,x,z,rotY)=>{ const s=new THREE.Mesh(new THREE.PlaneGeometry(2.6,0.42),
+    new THREE.MeshStandardMaterial({map:textPlate(txt,{font:'600 52px Georgia',ls:6}),transparent:true,color:0xe8d9b0}));
+    s.position.set(x,DY+3.62,z); s.rotation.y=rotY; add(s); };
+  sign('TO OBSERVATION DECK',-0.3,PZ1-WT-0.02,Math.PI);
+  sign('TO OBSERVATION DECK',7.7,PZ1-WT-0.02,Math.PI);
+  sign('86TH FLOOR',PX1-WT-0.02,-3.3,-Math.PI/2);
+
+  /* coin-op binocular viewers at the corners */
+  for(const [bx,bz,ry] of [[-15,10.5,Math.PI],[15,10.5,Math.PI],[-15,-10.5,0],[16.5,-10.5,0]]){
+    const b=new THREE.Group(); b.position.set(bx,DY,bz); b.rotation.y=ry;
+    const ped=new THREE.Mesh(new THREE.CylinderGeometry(.09,.13,1.15,10),steelDk); ped.position.y=.57;
+    const head=new THREE.Mesh(new THREE.BoxGeometry(.5,.34,.3),
+      new THREE.MeshStandardMaterial({color:0xb8952f,metalness:.85,roughness:.35}));
+    head.position.y=1.32;
+    const eye1=new THREE.Mesh(new THREE.CylinderGeometry(.07,.09,.2,10),steelDk);
+    eye1.rotation.x=Math.PI/2; eye1.position.set(-.12,1.32,-.2);
+    const eye2=eye1.clone(); eye2.position.x=.12;
+    b.add(ped,head,eye1,eye2); add(b);
+    addCollider(bx-.3,bx+.3,DY,DY+1.5,bz-.3,bz+.3);
+  }
+  /* benches along the pavilion south wall */
+  for(const bx of [2.5,5.5]){
+    box(bx-1.3,bx+1.3,DY+0.42,DY+0.5,PZ1+0.25,PZ1+0.75,new THREE.MeshStandardMaterial({color:0x5a3d26,roughness:.8}));
+    box(bx-1.2,bx-1.1,DY,DY+0.42,PZ1+0.3,PZ1+0.7,steelDk,false);
+    box(bx+1.1,bx+1.2,DY,DY+0.42,PZ1+0.3,PZ1+0.7,steelDk,false);
+  }
+}
+/* ================================================================== *
+ *  10. PLAYER CONTROLLER                                              *
+ * ================================================================== */
+grid.add(camera);
+const player={ pos:new THREE.Vector3(100,0.13,18), vel:new THREE.Vector3(),
+  yaw:Math.PI/2+0.25, pitch:0.06, r:0.32, h:1.75, eye:1.62, grounded:true, active:false };
+const keys={};
+addEventListener('keydown',e=>{ keys[e.code]=true; if(e.code==='KeyE') tryInteract(); });
+addEventListener('keyup',e=>keys[e.code]=false);
+
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const sm=t=>{ t=clamp(t,0,1); return t*t*t*(t*(t*6-15)+10); };
+
+function overlaps(b,px,py,pz,r,h){
+  return px+r>b.x0 && px-r<b.x1 && pz+r>b.z0 && pz-r<b.z1 && py+h>b.y0 && py<b.y1;
+}
+function dynColliders(){
+  const out=[], cy=elevator.cabY;
+  // cab walls travel with the cab
+  out.push({x0:11.05,x1:11.21,y0:cy,y1:cy+2.9,z0:-8.95,z1:-6.65});
+  out.push({x0:11.05,x1:13.45,y0:cy,y1:cy+2.9,z0:-8.95,z1:-8.81});
+  out.push({x0:11.05,x1:13.45,y0:cy,y1:cy+2.9,z0:-6.79,z1:-6.65});
+  // cab door blocks when not fully open
+  if(elevator.doorT<0.85)
+    out.push({x0:13.3,x1:14.1,y0:cy,y1:cy+2.5,z0:ELEV.DOOR_Z0,z1:ELEV.DOOR_Z1});
+  // landing openings block whenever the cab isn't open there
+  for(const [lv,y] of [['lobby',ELEV.LOBBY],['deck',ELEV.DECK]]){
+    if(!(elevator.at===lv && elevator.doorT>=0.85))
+      out.push({x0:13.6,x1:14.1,y0:y,y1:y+2.5,z0:ELEV.DOOR_Z0,z1:ELEV.DOOR_Z1});
+  }
+  return out;
+}
+function dynFloors(){
+  return [{x0:11.15,x1:13.45,z0:-8.95,z1:-6.65,top:elevator.cabY}];
+}
+function updatePlayer(dt){
+  if(tour.active) return;
+  if(!player.active){ // keep the camera glued to the player (e.g. riding with menu open)
+    camera.position.set(player.pos.x,player.pos.y+player.eye,player.pos.z);
+    camera.rotation.set(player.pitch,player.yaw,0);
+    return;
+  }
+  const sp=(keys.ShiftLeft||keys.ShiftRight)?6.6:4.1;
+  const f=[( -Math.sin(player.yaw)),(-Math.cos(player.yaw))];
+  const r=[Math.cos(player.yaw),-Math.sin(player.yaw)];
+  let mx=0,mz=0;
+  if(keys.KeyW||keys.ArrowUp){mx+=f[0];mz+=f[1];}
+  if(keys.KeyS||keys.ArrowDown){mx-=f[0];mz-=f[1];}
+  if(keys.KeyD||keys.ArrowRight){mx+=r[0];mz+=r[1];}
+  if(keys.KeyA||keys.ArrowLeft){mx-=r[0];mz-=r[1];}
+  const L=Math.hypot(mx,mz)||1;
+  const tx=mx/L*sp, tz=mz/L*sp, k=1-Math.pow(0.0015,dt);
+  player.vel.x+=(tx-player.vel.x)*k;
+  player.vel.z+=(tz-player.vel.z)*k;
+  player.vel.y-=22*dt;
+  const p=player.pos, all=colliders.concat(dynColliders());
+  // X axis
+  p.x+=player.vel.x*dt;
+  for(const b of all) if(overlaps(b,p.x,p.y+0.55,p.z,player.r,player.h-0.55))
+    p.x = player.vel.x>0 ? Math.min(p.x,b.x0-player.r) : Math.max(p.x,b.x1+player.r);
+  // Z axis
+  p.z+=player.vel.z*dt;
+  for(const b of all) if(overlaps(b,p.x,p.y+0.55,p.z,player.r,player.h-0.55))
+    p.z = player.vel.z>0 ? Math.min(p.z,b.z0-player.r) : Math.max(p.z,b.z1+player.r);
+  // Y / floors
+  p.y+=player.vel.y*dt;
+  let top=-100;
+  for(const fp of floors.concat(dynFloors()))
+    if(p.x>fp.x0&&p.x<fp.x1&&p.z>fp.z0&&p.z<fp.z1&&fp.top<=p.y+0.55&&fp.top>top) top=fp.top;
+  if(p.y<=top+0.02&&player.vel.y<=0){ p.y=top; player.vel.y=0; player.grounded=true; }
+  else player.grounded=false;
+  if(p.y<-5){ p.y=0.13; p.x=100; p.z=18; }
+  camera.position.set(p.x,p.y+player.eye,p.z);
+  camera.rotation.set(player.pitch,player.yaw,0);
+}
+
+/* pointer lock */
+const introEl=document.getElementById('intro');
+const canvasEl=renderer.domElement;
+let playing=false;
+function lockPointer(){ canvasEl.requestPointerLock&&canvasEl.requestPointerLock(); }
+canvasEl.addEventListener('click',()=>{ if(playing&&!tour.active) lockPointer(); });
+document.addEventListener('pointerlockchange',()=>{
+  const locked=document.pointerLockElement===canvasEl;
+  player.active=locked&&!tour.active;
+  document.getElementById('crosshair').style.display=locked?'block':'none';
+  if(!locked&&playing&&!tour.active) introEl.classList.remove('hidden');
+});
+addEventListener('mousemove',e=>{
+  if(document.pointerLockElement!==canvasEl||tour.active) return;
+  player.yaw-=e.movementX*0.0021;
+  player.pitch=clamp(player.pitch-e.movementY*0.0021,-1.45,1.45);
+});
+
+/* ================================================================== *
+ *  11. ELEVATOR STATE MACHINE                                         *
+ * ================================================================== */
+let AC=null;
+function audio(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return AC; }
+function ding(){
+  const a=audio(); if(!a) return;
+  for(const [f,d] of [[988,0],[784,0.22]]){
+    const o=a.createOscillator(), g=a.createGain();
+    o.frequency.value=f; o.type='sine';
+    g.gain.setValueAtTime(0.001,a.currentTime+d);
+    g.gain.exponentialRampToValueAtTime(0.12,a.currentTime+d+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,a.currentTime+d+0.9);
+    o.connect(g).connect(a.destination); o.start(a.currentTime+d); o.stop(a.currentTime+d+1);
+  }
+}
+let hum=null;
+function humStart(){ const a=audio(); if(!a||hum) return;
+  const o=a.createOscillator(), g=a.createGain(), fl=a.createBiquadFilter();
+  o.type='sawtooth'; o.frequency.value=46; fl.type='lowpass'; fl.frequency.value=150;
+  g.gain.value=0.018; o.connect(fl).connect(g).connect(a.destination); o.start(); hum={o,g};
+}
+function humStop(){ if(hum){ try{hum.g.gain.exponentialRampToValueAtTime(0.0001,audio().currentTime+0.4);
+  hum.o.stop(audio().currentTime+0.5);}catch(e){} hum=null; } }
+
+function playerInCab(){
+  const p=player.pos;
+  return p.x>11.2&&p.x<13.5&&p.z>-8.9&&p.z<-6.7&&Math.abs(p.y-elevator.cabY)<1.6;
+}
+function elevGo(target){
+  elevator.pending={target, dur: tour.active?13 : (playerInCab()?21:7)};
+  elevator.state='closing';
+}
+function elevInteract(){
+  const lv=player.pos.y>150?'deck':'lobby';
+  if(elevator.state==='riding'||elevator.state==='closing') return;
+  if(elevator.at===lv){
+    if(elevator.state==='closed') elevator.state='opening';
+    else if(elevator.state==='open'&&playerInCab())
+      elevGo(lv==='lobby'?'deck':'lobby');
+  } else if(elevator.state==='closed'||elevator.state==='open'){
+    if(elevator.state==='open'){ elevGo(lv); }             // doors close then travel
+    else { elevator.pending={target:lv,dur:7}; elevator.state='riding0'; }
+  }
+}
+function nearLanding(){
+  const p=player.pos, lv=p.y>150?'deck':'lobby';
+  const y0=lv==='deck'?ELEV.DECK:ELEV.LOBBY;
+  if(Math.abs(p.y-y0)>3) return null;
+  if(p.x>13.4&&p.x<17.2&&p.z>-9.6&&p.z<-6.0) return lv;
+  return null;
+}
+function updateElevator(dt){
+  const e=elevator;
+  if(e.state==='opening'){ e.doorT=Math.min(1,e.doorT+dt/1.1); if(e.doorT>=1) e.state='open'; }
+  else if(e.state==='closing'){ e.doorT=Math.max(0,e.doorT-dt/1.1);
+    if(e.doorT<=0){ if(e.pending){ e.state='riding0'; } else e.state='closed'; } }
+  else if(e.state==='riding0'){
+    e.rideFrom=e.cabY; e.rideTo=e.pending.target==='deck'?ELEV.DECK:ELEV.LOBBY;
+    e.rideT=e.pending.dur; e.t0=0; e.at='moving'; e.state='riding';
+    e.ridingWith=playerInCab(); if(e.ridingWith) humStart();
+  }
+  else if(e.state==='riding'){
+    e.t0+=dt;
+    const k=sm(e.t0/e.rideT);
+    e.cabY=e.rideFrom+(e.rideTo-e.rideFrom)*k;
+    if(e.ridingWith){ player.pos.y=e.cabY; player.vel.y=0; }
+    if(e.t0>=e.rideT){
+      e.cabY=e.rideTo; e.at=e.rideTo>150?'deck':'lobby'; e.pending=null;
+      e.state='opening'; humStop(); ding();
+      if(e.ridingWith) player.pos.y=e.cabY;
+    }
+  }
+  /* geometry sync */
+  cab.position.y=e.cabY;
+  const slide=sm(e.doorT)*0.66;
+  doorsCab.left.position.set(13.52,e.cabY+1.2,-8.13-slide);
+  doorsCab.right.position.set(13.52,e.cabY+1.2,-7.47+slide);
+  for(const [pair,lv] of [[doorsLobby,'lobby'],[doorsDeck,'deck']]){
+    const s=(e.at===lv)?slide:0;
+    pair.left.position.z=-8.13-s; pair.right.position.z=-7.47+s;
+  }
+  /* dials & cab indicator */
+  const fl=yToFloor(e.cabY);
+  if(fl!==e._fl||e.state!==e._st){
+    e._fl=fl; e._st=e.state;
+    const arrow=e.state==='riding'?(e.rideTo>e.rideFrom?'▲':'▼'):'';
+    cabInd.redraw((g,w,h)=>drawInd(g,w,h,fl===1?'L':fl,arrow));
+    lobbyDial.redraw(makeDial(fl)); deckDial.redraw(makeDial(fl));
+  }
+}
+
+/* interaction prompt + E */
+const promptEl=document.getElementById('prompt');
+function promptText(){
+  if(tour.active) return '';
+  const lv=nearLanding();
+  if(!lv) return '';
+  const e=elevator;
+  if(e.state==='riding') return '';
+  if(playerInCab()&&e.state==='open')
+    return e.at==='lobby'?'[E]&nbsp; UP TO THE 86TH FLOOR':'[E]&nbsp; DOWN TO THE LOBBY';
+  if(e.at===lv&&e.state==='closed') return '[E]&nbsp; OPEN ELEVATOR';
+  if(e.at!==lv&&(e.state==='closed'||e.state==='open')) return '[E]&nbsp; CALL ELEVATOR';
+  if(e.state==='open') return 'STEP INTO THE CAB';
+  return '';
+}
+function tryInteract(){ if(!player.active&&!playing) return; if(nearLanding()) elevInteract(); }
+
+/* ================================================================== *
+ *  12. ZONES, CAPTIONS, LANDMARK LABELS, COMPASS                      *
+ * ================================================================== */
+const captionEl=document.getElementById('caption');
+let capTimer=0;
+function showCaption(title,sub,hold=3.5){
+  captionEl.innerHTML=title+(sub?`<small>${sub}</small>`:'');
+  captionEl.style.opacity=1; capTimer=hold;
+}
+let lastZone='';
+function zoneOf(){
+  const p=player.pos;
+  if(elevator.ridingWith&&elevator.state==='riding') return 'cab';
+  if(p.y>150) return (p.x>-8&&p.x<16.5&&p.z>-11&&p.z<6.5)?'pavilion':'deck';
+  if(p.x>7&&p.x<56&&Math.abs(p.z)<6.9) return 'hall';
+  if(p.x>=56&&p.x<=65.5&&Math.abs(p.z)<5.4) return 'vestibule';
+  if(p.x>13.5&&p.x<22.5&&Math.abs(p.z)>6.4&&Math.abs(p.z)<24.5) return 'corridor';
+  return 'street';
+}
+const zoneCaps={
+  street:['FIFTH AVENUE','MIDTOWN MANHATTAN · NEW YORK'],
+  vestibule:['350 FIFTH AVENUE','ENTRANCE HALL'],
+  hall:['THE LOBBY','ROSE FAMOSA MARBLE · SHREVE, LAMB & HARMON · 1931'],
+  corridor:['OBSERVATORY ELEVATORS','EXPRESS TO THE 86TH FLOOR'],
+  cab:['EXPRESS ELEVATOR','86 FLOORS · UNDER A MINUTE IN 1931'],
+  deck:['86TH FLOOR OBSERVATORY','1,050 FT · 320 M ABOVE MANHATTAN'],
+  pavilion:['86TH FLOOR PAVILION','OPEN-AIR DECK THROUGH THE DOORS'],
+};
+
+/* landmarks (real lat/lon → world meters) */
+const LANDMARKS=[
+  ['CHRYSLER BUILDING',40.75174,-73.97553,300],
+  ['ONE WORLD TRADE CENTER',40.71274,-74.01339,520],
+  ['ONE VANDERBILT',40.75288,-73.97852,410],
+  ['ROCKEFELLER CENTER',40.75874,-73.97867,280],
+  ['TIMES SQUARE',40.75800,-73.98550,130],
+  ['CENTRAL PARK',40.77500,-73.96900,100],
+  ['HUDSON RIVER',40.75500,-74.01800,50],
+  ['EAST RIVER',40.74300,-73.96300,50],
+  ['STATUE OF LIBERTY ↓',40.68925,-74.04450,140],
+  ['FLATIRON BUILDING',40.74110,-73.98970,110],
+  ['MADISON SQUARE GARDEN',40.75050,-73.99340,90],
+  ['EDGE · HUDSON YARDS',40.75390,-74.00110,370],
+  ['BRYANT PARK',40.75360,-73.98320,60],
+  ['MACY’S HERALD SQUARE',40.75080,-73.98930,70],
+  ['GRAND CENTRAL',40.75270,-73.97720,80],
+  ['432 PARK AVENUE',40.76170,-73.97190,420],
+  ['CENTRAL PARK TOWER',40.76640,-73.98090,470],
+].map(([n,la,lo,y])=>{ const [x,z]=ll(la,lo); return {n, v:new THREE.Vector3(x,y,z), el:null}; });
+const labelsEl=document.getElementById('labels');
+for(const lm of LANDMARKS){ const d=document.createElement('div'); d.className='lm';
+  d.textContent=lm.n; d.style.display='none'; labelsEl.appendChild(d); lm.el=d; }
+const _pv=new THREE.Vector3();
+function updateLabels(){
+  const cp=camera.position; // grid-local (camera is a child of the grid group)
+  const inPavilion = cp.x>-9&&cp.x<17.2&&cp.z>-12&&cp.z<7.2&&cp.y>150&&cp.y<323.8;
+  const inShaft = cp.x>10.5&&cp.x<14.4&&cp.z>-9.6&&cp.z<-6.2&&cp.y<323.8;
+  const high=camera.getWorldPosition(_pv).y>150 && !inPavilion && !inShaft;
+  const camPos=_pv.clone();
+  const fwd=camera.getWorldDirection(new THREE.Vector3());
+  for(const lm of LANDMARKS){
+    if(!high){ lm.el.style.display='none'; continue; }
+    const dir=lm.v.clone().sub(camPos).normalize();
+    if(dir.dot(fwd)<0.35){ lm.el.style.display='none'; continue; }
+    const p=lm.v.clone().project(camera);
+    if(p.z>1||Math.abs(p.x)>0.98||Math.abs(p.y)>0.95){ lm.el.style.display='none'; continue; }
+    lm.el.style.display='block';
+    lm.el.style.left=((p.x*0.5+0.5)*innerWidth)+'px';
+    lm.el.style.top =((-p.y*0.5+0.5)*innerHeight)+'px';
+  }
+}
+/* compass strip */
+const compassEl=document.getElementById('compass');
+const cg=compassEl.getContext('2d');
+const CARD=[['N',0],['NE',45],['E',90],['SE',135],['S',180],['SW',225],['W',270],['NW',315]];
+function updateCompass(){
+  const high=camera.getWorldPosition(_pv).y>150&&(playing||tour.active);
+  compassEl.style.display=high?'block':'none';
+  if(!high) return;
+  const d=camera.getWorldDirection(new THREE.Vector3());
+  let hd=Math.atan2(d.x,-d.z)*180/Math.PI; if(hd<0)hd+=360;
+  const W=compassEl.width,H=compassEl.height, ppd=W/120;
+  cg.clearRect(0,0,W,H);
+  cg.fillStyle='rgba(8,10,14,.45)'; cg.fillRect(0,0,W,H);
+  cg.textAlign='center'; cg.textBaseline='middle';
+  for(let a=-70;a<=70;a+=5){
+    let ang=(hd+a+360)%360;
+    const x=W/2+a*ppd;
+    if(ang%15<0.01||15-(ang%15)<0.01){ cg.fillStyle='rgba(220,220,220,.5)'; cg.fillRect(x,H-8,1,6); }
+  }
+  for(const [t,ang] of CARD){
+    let diff=((ang-hd+540)%360)-180;
+    if(Math.abs(diff)<=62){
+      cg.fillStyle=t.length===1?'#ffd98a':'#cfd6df';
+      cg.font=t.length===1?'700 15px Georgia':'12px Georgia';
+      cg.fillText(t, W/2+diff*ppd, H/2-2);
+    }
+  }
+  cg.fillStyle='#ffd98a'; cg.beginPath();
+  cg.moveTo(W/2-4,0); cg.lineTo(W/2+4,0); cg.lineTo(W/2,6); cg.closePath(); cg.fill();
+}
+
+/* ================================================================== *
+ *  13. CINEMATIC TOUR                                                 *
+ * ================================================================== */
+const tour={active:false, i:0, t:0, steps:[]};
+const fadeEl=document.getElementById('fade');
+const tourbarEl=document.getElementById('tourbar');
+const V=(x,y,z)=>new THREE.Vector3(x,y,z);
+function lmGrid(name,y){ const lm=LANDMARKS.find(l=>l.n.startsWith(name));
+  const c=Math.cos(gridAngle), s=Math.sin(gridAngle);
+  const x=lm.v.x*c+lm.v.z*s, z=-lm.v.x*s+lm.v.z*c;
+  return V(x, y??lm.v.y, z); }
+function buildTourSteps(){
+  const DY=ELEV.DECK, EYE=1.62;
+  return [
+    {dur:8, a:V(260,190,200), b:V(115,30,60), la:V(0,200,0), lb:V(20,80,0),
+     cap:['EMPIRE STATE BUILDING','NEW YORK · COMPLETED 1931 · 443 METERS']},
+    {dur:6, a:V(115,30,60), b:V(88,1.9,16), la:V(20,80,0), lb:V(64,12,0),
+     cap:['350 FIFTH AVENUE','BETWEEN WEST 33RD & WEST 34TH STREETS']},
+    {dur:6, a:V(88,1.9,16), b:V(58,2.0,0), la:V(64.65,8,0), lb:V(8,4.5,0),
+     cap:['THE LOBBY','THREE STORIES OF ROSE FAMOSA MARBLE']},
+    {dur:8, a:V(56,2.0,0), b:V(18,2.1,0), la:V(8,4.5,0), lb:V(8,5,0),
+     cap:['THE ALUMINUM RELIEF','THE BUILDING RADIANT OVER MANHATTAN']},
+    {dur:3.5, a:V(18,2.1,0), b:V(16.2,1.8,-4.2), la:V(8,5,0), lb:V(13.8,1.8,-7.8)},
+    {act:()=>{ elevator.at='lobby'; elevator.cabY=ELEV.LOBBY; elevator.state='opening'; },
+     wait:()=>elevator.state==='open'},
+    {dur:2.4, a:V(16.2,1.8,-4.2), b:V(12.4,ELEV.LOBBY+EYE,-7.8), la:V(13.8,1.8,-7.8), lb:V(14.4,ELEV.LOBBY+1.5,-7.8)},
+    {act:()=>{ elevator.ridingWith=false; elevGo('deck'); },
+     wait:()=>elevator.state==='open'&&elevator.at==='deck',
+     follow:()=>{ camera.position.set(12.4,elevator.cabY+EYE,-7.8);
+       lookGrid(V(14.4,elevator.cabY+1.5,-7.8)); },
+     cap:['EXPRESS ELEVATOR','LOBBY TO THE 86TH FLOOR']},
+    {dur:3, a:V(12.4,DY+EYE,-7.8), b:V(15.8,DY+EYE,-7.5), la:V(16.4,DY+1.5,-3.3), lb:V(16.4,DY+1.5,-3.3)},
+    {dur:4, a:V(15.8,DY+EYE,-7.5), b:V(17.4,DY+EYE,-3.2), la:V(17.5,DY+1.4,6), lb:V(17.5,DY+1.4,10)},
+    {dur:5, a:V(17.4,DY+EYE,-3.2), b:V(16.6,DY+EYE,10.6), la:()=>lmGrid('ONE WORLD'), lb:()=>lmGrid('ONE WORLD'),
+     cap:['LOOKING DOWNTOWN','ONE WORLD TRADE CENTER · THE STATUE OF LIBERTY']},
+    {dur:6, a:V(16.6,DY+EYE,10.6), b:V(-5,DY+EYE,10.8), la:()=>lmGrid('ONE WORLD'), lb:()=>lmGrid('HUDSON'),
+     cap:['THE HUDSON RIVER','NEW JERSEY BEYOND THE WEST SIDE']},
+    {dur:7, a:V(-5,DY+EYE,10.8), b:V(-16.8,DY+EYE,-10.4), la:()=>lmGrid('HUDSON'), lb:()=>lmGrid('CENTRAL PARK'),
+     cap:['UPTOWN','CENTRAL PARK · BILLIONAIRES’ ROW']},
+    {dur:6, a:V(-16.8,DY+EYE,-10.4), b:V(10,DY+EYE,-10.8), la:()=>lmGrid('CENTRAL PARK'), lb:()=>lmGrid('CHRYSLER'),
+     cap:['MIDTOWN EAST','THE CHRYSLER BUILDING · GRAND CENTRAL']},
+    {dur:11, a:V(10,DY+EYE,-10.8), b:V(-170,DY+130,170), la:V(0,330,0), lb:V(0,330,0),
+     cap:['THE EMPIRE STATE BUILDING','KING OF NEW YORK SINCE 1931']},
+  ];
+}
+const _lt=new THREE.Vector3();
+function lookGrid(v){ _lt.copy(v).applyMatrix4(grid.matrixWorld); camera.lookAt(_lt); }
+function startTour(){
+  introEl.classList.add('hidden');
+  if(document.pointerLockElement) document.exitPointerLock();
+  playing=true; player.active=false;
+  tour.active=true; tour.i=0; tour.t=0; tour.steps=buildTourSteps();
+  tourbarEl.style.display='block';
+  document.getElementById('crosshair').style.display='none';
+  elevator.at='lobby'; elevator.cabY=ELEV.LOBBY; elevator.state='closed'; elevator.doorT=0; elevator.pending=null;
+}
+function endTour(){
+  tour.active=false; tourbarEl.style.display='none';
+  fadeEl.style.opacity=1;
+  setTimeout(()=>{
+    // leave the visitor on the south walkway of the deck
+    player.pos.set(4,ELEV.DECK,10.2); player.vel.set(0,0,0);
+    player.yaw=Math.PI; player.pitch=-0.02;
+    elevator.at='deck'; elevator.cabY=ELEV.DECK; elevator.state='closed'; elevator.doorT=0;
+    camera.position.set(player.pos.x,player.pos.y+player.eye,player.pos.z);
+    camera.rotation.set(player.pitch,player.yaw,0);
+    fadeEl.style.opacity=0;
+    showCaption('86TH FLOOR OBSERVATORY','CLICK TO WALK · E TO RIDE BACK DOWN',5);
+    lockPointer();
+  },1200);
+}
+function updateTour(dt){
+  if(!tour.active) return;
+  const st=tour.steps[tour.i];
+  if(!st){ endTour(); return; }
+  if(st.cap&&!st._capped){ showCaption(st.cap[0],st.cap[1],Math.min((st.dur||6)-0.5,6)); st._capped=true; }
+  if(st.act&&!st._acted){ st.act(); st._acted=true; }
+  if(st.wait){
+    if(st.follow) st.follow();
+    if(st.wait()){ tour.i++; tour.t=0; }
+    return;
+  }
+  tour.t+=dt;
+  const k=sm(tour.t/st.dur);
+  const p=st.a.clone().lerp(st.b,k);
+  camera.position.copy(p);
+  const la=typeof st.la==='function'?st.la():st.la;
+  const lb=typeof st.lb==='function'?st.lb():st.lb;
+  lookGrid(la.clone().lerp(lb,k));
+  if(tour.t>=st.dur){ tour.i++; tour.t=0; }
+}
+document.getElementById('stopTour').onclick=()=>{ endTour(); };
+
+/* ================================================================== *
+ *  14. UI WIRING & MAIN LOOP                                          *
+ * ================================================================== */
+document.getElementById('playBtn').onclick=()=>{
+  introEl.classList.add('hidden'); playing=true;
+  audio();
+  if(!tour.active){ player.active=true; lockPointer(); }
+  showCaption(...zoneCaps[zoneOf()],4);
+};
+document.getElementById('tourBtn').onclick=()=>{ audio(); startTour(); };
+
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+
+/* lobby interior lights off while you're on the deck (perf) */
+function cullInteriors(){
+  const high=player.pos.y>150||camera.position.y>150;
+  lobby.visible=!high||tour.active;
+  for(const l of lobbyLights) l.visible=!high;
+}
+
+const clock=new THREE.Clock();
+let firstFrame=true;
+function loop(){
+  requestAnimationFrame(loop);
+  const dt=Math.min(clock.getDelta(),0.05);
+  updateElevator(dt);
+  updatePlayer(dt);
+  updateTour(dt);
+  cullInteriors();
+  /* beacon pulse */
+  if(window.__beacon) window.__beacon.material.emissiveIntensity=1.4+Math.sin(performance.now()*0.004)*1.2;
+  /* prompt */
+  const pt=playing&&!tour.active?promptText():'';
+  promptEl.style.display=pt?'block':'none';
+  if(pt) promptEl.innerHTML=pt;
+  /* caption fade */
+  if(capTimer>0){ capTimer-=dt; if(capTimer<=0) captionEl.style.opacity=0; }
+  /* zone captions */
+  if(playing&&!tour.active){
+    const z=zoneOf();
+    if(z!==lastZone){ lastZone=z; showCaption(...zoneCaps[z]); }
+  }
+  updateLabels(); updateCompass();
+  renderer.render(scene,camera);
+  if(firstFrame){ firstFrame=false;
+    document.getElementById('loading').classList.add('hidden');
+    window.__ready=true; }
+}
+/* initial camera: standing on 5th Avenue looking up */
+camera.position.set(player.pos.x,player.pos.y+player.eye,player.pos.z);
+camera.rotation.set(player.pitch,player.yaw,0);
+loop();
+
+/* debug/test hooks */
+window.__esb={
+  teleport(zone){
+    const spots={ street:[100,0.13,18,Math.PI/2+0.25,0.10], entrance:[72,0.13,0,Math.PI/2,0.05],
+      lobby:[40,FLOOR_Y,0,Math.PI/2,0.05], mural:[16,FLOOR_Y,0,Math.PI/2,0.1],
+      corridor:[18,FLOOR_Y,-12,Math.PI/2,0], elevator:[15.5,FLOOR_Y,-7.8,Math.PI/2,0],
+      deck:[4,ELEV.DECK,10.2,Math.PI,0], deckN:[4,ELEV.DECK,-11.5,0,0],
+      deckE:[17.5,ELEV.DECK,-3,-Math.PI/2,0], deckW:[-17,ELEV.DECK,0,Math.PI/2,0],
+      sky:[-260,420,260,Math.PI*0.75,-0.35] };
+    const s=spots[zone]; if(!s) return Object.keys(spots);
+    playing=true; introEl.classList.add('hidden');
+    document.getElementById('loading').classList.add('hidden');
+    player.pos.set(s[0],s[1],s[2]); player.vel.set(0,0,0);
+    player.yaw=s[3]; player.pitch=s[4];
+    camera.position.set(s[0],s[1]+player.eye,s[2]);
+    camera.rotation.set(s[4],s[3],0);
+    if(s[1]>150){ elevator.at='deck'; elevator.cabY=ELEV.DECK; }
+    return zone;
+  },
+  look(yaw,pitch){ player.yaw=yaw; player.pitch=pitch;
+    camera.rotation.set(pitch,yaw,0); },
+  elevator, player, startTour, endTour,
+};
+</script>
+</body>
+</html>
