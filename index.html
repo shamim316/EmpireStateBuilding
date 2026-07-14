@@ -153,6 +153,16 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(19000,32,20),
   }));
 scene.add(sky);
 
+/* environment reflections generated from the sky itself (metals, water, glass) */
+{
+  const pmrem=new THREE.PMREMGenerator(renderer);
+  const envScene=new THREE.Scene();
+  envScene.add(new THREE.Mesh(sky.geometry.clone(), sky.material));
+  scene.environment=pmrem.fromScene(envScene, 0.04).texture;
+  scene.environmentIntensity=0.5;
+  pmrem.dispose();
+}
+
 /* ================================================================== *
  *  2. PROCEDURAL TEXTURES (canvas) & SHARED MATERIALS                 *
  * ================================================================== */
@@ -468,14 +478,16 @@ scene.add(city);
   rg.setAttribute('color',    new THREE.Float32BufferAttribute(rc,3));
   city.add(new THREE.Mesh(rg, new THREE.MeshStandardMaterial({vertexColors:true, roughness:.97})));
 
-  // open water (Hudson, East River, harbor) — bounded to the baked coastline area
-  const water=new THREE.Mesh(new THREE.PlaneGeometry(17000,22400),
-    new THREE.MeshStandardMaterial({color:0x2c4d63, roughness:.42, metalness:.06}));
-  water.rotation.x=-Math.PI/2; water.position.set(850,-1.4,-700);
+  // open water (Hudson, East River, harbor) — kept inside the baked coastline area
+  const water=new THREE.Mesh(new THREE.PlaneGeometry(15900,21000),
+    new THREE.MeshStandardMaterial({color:0x36586e, roughness:.38, metalness:.08,
+      emissive:0x16303f, emissiveIntensity:.5}));
+  water.rotation.x=-Math.PI/2; water.position.set(925,-1.4,-350);
   city.add(water);
-  // distant terrain beyond the data area (NJ / outer boroughs continue)
-  const outer=new THREE.Mesh(new THREE.PlaneGeometry(42000,42000),
-    new THREE.MeshStandardMaterial({color:0x6f6a5f, roughness:.98}));
+  // distant terrain beyond the data area (NJ / outer boroughs continue) —
+  // unlit so it always blends into the haze instead of going dark at grazing angles
+  const outer=new THREE.Mesh(new THREE.PlaneGeometry(36000,36000),
+    new THREE.MeshBasicMaterial({color:0xb5a893}));
   outer.rotation.x=-Math.PI/2; outer.position.y=-2.1;
   city.add(outer);
 }
@@ -551,8 +563,13 @@ grid.add(esb);
   /* --- entrance portal trim: stepped granite surround + brass --- */
   const por=(w,h,d,mat,x,y,z)=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
     m.position.set(x,y,z); m.castShadow=true; esb.add(m); return m; };
-  por(1.0,10.5,12.6, marbleGyMat, bx1+0.15, 5.25, 0);
-  por(0.8,9.6,11.2, marbleDkMat, bx1+0.55, 4.8, 0);
+  // stepped portal surround: hollow frames (jambs + lintel), not solid slabs
+  por(1.0,10.5,1.4, marbleGyMat, bx1+0.15, 5.25, -5.6);
+  por(1.0,10.5,1.4, marbleGyMat, bx1+0.15, 5.25,  5.6);
+  por(1.0,1.9,12.6, marbleGyMat, bx1+0.15, 9.55, 0);
+  por(0.8,9.6,1.0, marbleDkMat, bx1+0.5, 4.8, -5.1);
+  por(0.8,9.6,1.0, marbleDkMat, bx1+0.5, 4.8,  5.1);
+  por(0.8,1.6,11.2, marbleDkMat, bx1+0.5, 8.8, 0);
   // portal side columns + lintel in brass
   por(0.5,8.2,0.7, brassMat, bx1+0.6, 4.1, -4.7);
   por(0.5,8.2,0.7, brassMat, bx1+0.6, 4.1,  4.7);
